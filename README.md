@@ -8,7 +8,7 @@ Point it at your course material. It reads your slides, your textbooks and the g
 already written, then writes a new guide with worked examples, your own figures and exam-style
 practice, and refuses to call it finished until it passes its own checks.
 
-[![Download](https://img.shields.io/badge/Download-Windows%20installer-2ea88a?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/mushfique-dgist/guide-watcher/releases/latest)
+[![Download](https://img.shields.io/badge/Download-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-2ea88a?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mushfique-dgist/guide-watcher/releases/latest)
 [![Release](https://img.shields.io/github/v/release/mushfique-dgist/guide-watcher?style=for-the-badge&color=2ea88a)](https://github.com/mushfique-dgist/guide-watcher/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/mushfique-dgist/guide-watcher/total?style=for-the-badge&color=2ea88a)](https://github.com/mushfique-dgist/guide-watcher/releases)
 [![Licence](https://img.shields.io/github/license/mushfique-dgist/guide-watcher?style=for-the-badge&color=2ea88a)](LICENSE)
@@ -26,6 +26,7 @@ modelled on a past paper you supply. It took 76 minutes and told you when it was
 | Capability | What it means in practice |
 | --- | --- |
 | **Reads what you already have** | Your slides, the textbooks in the same folder, and every guide it wrote for earlier lectures, so each guide builds on the last instead of repeating it. |
+| **Finds what you do not have** | With only a slide deck, the public web and public lecture video become the backbone of the guide: standards, official documentation, university course pages and recorded lectures, each cited with a section, page or timestamp, and never fewer than two independent publishers. |
 | **Teaches, rather than narrating slides** | Rules it must follow: describe a thing before naming it, open each section with the problem it solves, give an analogy and say where the analogy breaks, and never write "any questions?" because a slide said it. |
 | **Checks its own work** | Arithmetic that does not add up, sections with no worked example, terms used before they are defined, figures never mentioned in the prose. A guide is published only after it passes. |
 | **Keeps going when a model gives out** | Two providers. If one hits a usage limit or is signed out, the run moves to the next rather than dying, and continues a half-finished draft in the same voice. |
@@ -49,22 +50,43 @@ effort level and fallback still exists; they come back with one **Power mode** s
 
 ## Install
 
-### Windows
+**[Download for your computer &rarr;](https://github.com/mushfique-dgist/guide-watcher/releases/latest)**
 
-[**Download the installer**](https://github.com/mushfique-dgist/guide-watcher/releases/latest)
-(`.exe`), or the `.msi` if your machine is managed. Then read *Before your first guide* below,
-because the app needs two things from you before it can write anything.
+| Your computer | Take this file |
+|---|---|
+| Windows 10 or 11 | `Guide.Watcher_<version>_x64-setup.exe`, or the `.msi` if your machine is managed |
+| macOS, Apple silicon | `Guide.Watcher_<version>_aarch64.dmg` |
+| macOS, Intel | `Guide.Watcher_<version>_x64.dmg` |
+| Debian or Ubuntu | `Guide.Watcher_<version>_amd64.deb` |
+| Fedora or openSUSE | `Guide.Watcher-<version>-1.x86_64.rpm` |
+| Any other Linux | `Guide.Watcher_<version>_amd64.AppImage` |
 
-### macOS and Linux
+Every release carries `SHA256SUMS.txt` and a GitHub build-provenance attestation, which is
+cryptographic proof of the exact commit and workflow that produced each file. To check one:
 
-Not yet. The pipeline is portable Rust; the installer, the taskbar badge and the path handling
-are the parts that still assume Windows. It is the next piece of work.
+```bash
+gh attestation verify Guide.Watcher_2.1.0_x64-setup.exe --repo mushfique-dgist/guide-watcher
+sha256sum -c SHA256SUMS.txt        # certutil -hashfile <file> SHA256 on Windows
+```
+
+<details>
+<summary>If your browser or operating system warns about the download</summary>
+
+Windows SmartScreen and macOS Gatekeeper judge an application by how many people have already
+run it, so a new one is unknown to them until it has been downloaded many times.
+
+- **Windows:** choose *More info* &rarr; *Run anyway*.
+- **macOS:** open the `.dmg`, then right-click the app and choose *Open*, once.
+- **Linux:** the AppImage needs `chmod +x` before it will run.
+
+Check the checksum and the attestation above if you would rather not take that on trust.
+
+</details>
 
 ### Build it yourself
 
 ```bash
 npm install
-cp guide-watcher.example.json guide-watcher.local.json   # then edit it
 npx tauri build
 ```
 
@@ -75,27 +97,25 @@ tools you install and sign in to yourself, so your subscription and your credent
 
 1. **Install and sign in to both CLIs.** [Claude Code](https://claude.com/claude-code) writes the
    guides; [OpenAI Codex](https://developers.openai.com/codex/cli) collects the material.
-2. **Install Python 3.13** and the verifier's packages:
-   `pip install pymupdf markdown-it-py youtube-transcript-api requests`.
-3. **Put the `_automation` folder somewhere** and point the settings file at it. It holds the
-   writing rules and the checker, in plain text, so you can read and change what a guide must be.
-4. **Edit `guide-watcher.local.json`**: your course folder, and one entry per subject.
+2. **Install Python 3.13** and the checker's packages:
+   `pip install pymupdf markdown-it-py requests`.
+3. **Open the app.** It asks the rest itself.
 
-```jsonc
-{
-  "watch_dir": "C:/Users/you/Documents/Study",
-  "courses": [
-    { "id": "photography", "label": "Photography", "folder": "Photography",
-      "lecture_files": "^lesson[0-9]+.*\\.pdf$" }
-  ]
-}
-```
+The first run is a wizard with two doors:
 
-`lecture_files` is optional. It says which file names start a guide, so a folder can hold both
-your lectures and the textbook that is not one. Leave it out and every supported file counts.
+- **Walk me through it** — three questions: where your course material lives, where the
+  `_automation` folder is, and which subjects you want guides for. Every answer is checked
+  against your computer before it is saved, so nothing fails later with a path error.
+- **Let my AI assistant do it** — if Claude Code is signed in on this machine, the app writes it
+  a brief, opens a terminal with it running, and waits. The assistant asks you where your
+  material lives, checks the prerequisites, writes the settings file, and the app carries on by
+  itself the moment it appears.
 
-Prefer to hand the whole thing to an AI assistant? Point it at
-[`SETUP_FOR_AI.md`](SETUP_FOR_AI.md). Already running an older build? Point it at
+Settings live in one JSON file in your own configuration directory — `%APPDATA%`,
+`~/Library/Application Support`, or `$XDG_CONFIG_HOME` — which you can read and edit by hand.
+The same wizard is in **Settings &rarr; This computer** whenever you want to change an answer.
+
+Already running an older build? Point your assistant at
 [`UPDATE_FOR_AI.md`](UPDATE_FOR_AI.md), which carries your settings forward and asks you for
 whatever it cannot work out on its own.
 
@@ -104,8 +124,11 @@ whatever it cannot work out on its own.
 Two phases, two different models, neither trusted on its own.
 
 1. **Collect.** Extract the text and page images, rank which figures are worth teaching from, pull
-   the relevant pages out of any book in the folder, and freeze all of it into an evidence packet
-   with checksums. Nothing later may read a file that is not in that packet.
+   the relevant pages out of any book in the folder, research the topic in public sources, and
+   freeze all of it into an evidence packet with checksums. Nothing later may read a file that is
+   not in that packet. How much of that evidence has to come from outside depends on what you
+   supplied: with a book beside the deck, research supports it; with only the deck, public
+   sources are the backbone and two independent ones are the minimum.
 2. **Write.** Draft against that packet, deepen it in bounded passes, then fix exactly what the
    checker reports. A model finishing its response proves nothing; only the checks do.
 

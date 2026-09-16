@@ -1,7 +1,7 @@
 [package]
 name = "guide-watcher"
 default-run = "guide-watcher"
-version = "2.0.0"
+version = "2.1.0"
 description = "Generate study guides from lecture PDFs"
 authors = ["Guide Watcher contributors"]
 license = "MIT"

@@ -5,7 +5,7 @@ that build to their own machine: their folders, their courses, their tool paths.
 bring the app up to this package's version **without losing a single thing they configured**, and
 to leave them with a working app rather than a half-finished one.
 
-If this machine has **no** previous install, stop reading here and follow `README_FIRST_SETUP_FOR_AI.md`
+If this machine has **no** previous install, stop reading here and follow `SETUP_FOR_AI.md`
 instead. That is the first-time setup; this document is the upgrade.
 
 **Your goal is a working app on this specific machine, not a completed checklist.** These steps
