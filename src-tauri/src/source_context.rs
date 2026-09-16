@@ -3286,13 +3286,40 @@ fn capture_plain_file(
     })
 }
 
+/// The folders this installation was pointed at, plus the app's own workspace area. Symlinks
+/// above these belong to the operating system: `/var` is a symlink on every Mac, and the system
+/// temporary folder lives under it.
+fn trusted_roots() -> Vec<PathBuf> {
+    let settings = crate::config::settings();
+    [
+        settings.watch_dir.clone(),
+        settings.automation_dir.clone(),
+        std::env::temp_dir().to_string_lossy().into_owned(),
+    ]
+    .into_iter()
+    .filter(|root| !root.trim().is_empty())
+    .map(PathBuf::from)
+    .collect()
+}
+
+/// Whether this ancestor sits above one of those roots, and so is the system's rather than ours.
+fn is_above_trusted_root(candidate: &Path, roots: &[PathBuf]) -> bool {
+    roots
+        .iter()
+        .any(|root| root.starts_with(candidate) && root != candidate)
+}
+
 fn ensure_plain_path_chain(path: &Path, leaf: PlainLeaf, label: &str) -> Result<(), String> {
     let ancestors = path
         .ancestors()
         .filter(|ancestor| !ancestor.as_os_str().is_empty())
         .collect::<Vec<_>>();
+    let roots = trusted_roots();
     for (index, component_path) in ancestors.iter().rev().enumerate() {
         let is_leaf = index + 1 == ancestors.len();
+        if !is_leaf && is_above_trusted_root(component_path, &roots) {
+            continue;
+        }
         let metadata = std::fs::symlink_metadata(component_path).map_err(|error| {
             format!(
                 "{label} path component is missing or unreadable ({}): {error}",
@@ -5225,7 +5252,7 @@ mod tests {
             "procedure_steps": [{
                 "id": "configure-meter",
                 "action": "Set the meter to DC volts before connecting the probes.",
-                "transcript_segment_ids": []
+                "transcript_segment_ids": ["segment-1"]
             }],
             "conflicts": [], "gaps": []
         })
