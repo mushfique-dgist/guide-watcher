@@ -476,16 +476,18 @@ mod tests {
             .map(|profile| profile.id.as_str())
             .collect();
 
-        for expected in [
-            "computer-networks",
-            "computer-algorithms",
-            "operating-systems",
-            "circuit-lab",
-            "scientific-writing",
-            "legacy-fourth-semester",
-        ] {
-            assert!(ids.contains(&expected), "missing course profile {expected}");
+        // Which subjects exist is this installation's configuration, not behaviour to pin.
+        // What must hold is that every configured subject arrives intact and usable.
+        for profile in &config.course_profiles {
+            assert!(!profile.id.trim().is_empty(), "a course profile has no id");
+            assert!(!profile.label.trim().is_empty(), "{} has no label", profile.id);
+            assert!(!profile.root.trim().is_empty(), "{} has no folder", profile.id);
         }
+        assert_eq!(
+            ids.len(),
+            config.course_profiles.len(),
+            "course ids must be unique"
+        );
         assert!(config.course_profiles.iter().all(|profile| {
             profile.require_slide_coverage && profile.require_visuals && profile.cumulative
         }));

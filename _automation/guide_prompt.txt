@@ -1,0 +1,502 @@
+# Study Guide Generation Instructions
+
+You are creating one complete study guide from one lecture deck or one course week. Sources may include PDF, PPTX, HTML, DOCX, textbook chapters, LMS announcements, and instructor videos. The guide must be thorough enough that a student reading only it can understand every source unit and solve representative course tasks without separately reconstructing the textbook or sparse slides.
+
+---
+
+## Step 0: Guide Depth Contract
+
+Before writing, apply the centralized depth contract from `guide_depth_contract.md`.
+
+This guide must target expert-tutor explanatory depth, not the shortest guide that can pass a few checks. Long synthesis is expected. Do not compress the output to save tokens or time.
+
+For dense computational slide decks, shallow output is a failure even when the app-owned arithmetic checks pass. If the rendered deck has at least 20 slides and the guide is computational, the guide must usually have at least 240 words per slide and at least `min(20, max(10, slide_count // 2))` major `#` sections. Treat those as a floor, not a target.
+
+The model must perform a TA-style second pass: independently recompute traces, compare figure facts against rendered slides, remove stale failed attempts, and only then let the native gate append the completion marker.
+
+One guide covers the entire selected lecture/week. A sparse slide is a research cue, not permission to copy a few bullets. Expand it with the assigned textbook and current authoritative sources while keeping the instructor material as the course authority. Teach in concept order; do not mechanically make one prose heading per slide.
+
+---
+
+## Step 1: Reading the Source Material
+
+### Reading the Lecture File
+
+**If the file is a PDF:**
+Extract every page with PyMuPDF, and render every page so figures can be inspected visually:
+
+```python
+import pymupdf
+doc = pymupdf.open("path/to/lecture.pdf")
+for i, page in enumerate(doc):
+    print(f"--- Page {i+1} ---")
+    print(page.get_text())
+```
+
+Read ALL pages. Do not skip any slides.
+
+**If the file is a PPTX:**
+Inspect every slide, speaker note, embedded chart, table, and image. Render the deck to page images when the available document tools support it. Do not treat extracted text as a replacement for the visual slide because grouping, arrows, layering, and animation states may carry the lesson.
+
+**If the file is a DOCX:**
+Read the complete document, including headings, tables, captions, comments exposed by the document tools, and embedded images. Treat it as a supporting document unless the course week is explicitly organized around it.
+
+**If the file is an HTML file:**
+HTML lecture files are often JavaScript-rendered single-page apps where the actual educational content lives inside script blocks as template literal strings, NOT in the visible HTML DOM. Standard HTML parsers will miss the content entirely.
+
+Extract the educational content from JavaScript template literals via the Bash tool:
+
+```python
+import re
+
+with open("path/to/lecture.html", "r", encoding="utf-8") as f:
+    html = f.read()
+
+# Content is inside JS template literals (backtick strings)
+templates = re.findall(r'`(.*?)`', html, re.DOTALL)
+
+for i, tmpl in enumerate(templates):
+    if len(tmpl) < 30:
+        continue
+    # Strip HTML tags, keep text and LaTeX math intact
+    text = re.sub(r'<[^>]+>', ' ', tmpl)
+    text = re.sub(r'\s+', ' ', text).strip()
+    if text:
+        print(f"--- Section {i} ---")
+        print(text)
+        print()
+```
+
+This extracts all educational content while preserving:
+- LaTeX math expressions (`\(` inline `\)` and `\[` display `\]` delimiters — convert them to readable math notation in the guide)
+- All prose explanations, key points, and warnings
+- Section structure (each template literal is roughly one slide/section)
+
+IMPORTANT for HTML lectures: If the regex extraction above yields no results (some HTML files may have content directly in the DOM instead of JavaScript), fall back to reading the file with the Read tool and parsing the visible HTML.
+
+Read ALL the extracted content. Do not skip any sections.
+
+### Build the Source Register Before Drafting
+
+Search the same course folder for the assigned textbook, syllabus, rubrics, readings, and prior guides. Then research enough current, authoritative material to expand the sparse lecture: official standards and documentation, reputable university lectures, primary research, and high-quality explanatory videos. Use secondary tutorials only for clarification. Do not force every available book into the guide; select the relevant chapters and record what was actually used.
+
+Assess every supplementary resource supplied by the app, regardless of its filename. Use relevant material to expand sparse lecture units and record the exact book, chapter, and pages actually used. If a supplied resource does not support this lecture, explain that decision in the research notes; do not silently ignore it or force unrelated material into the guide. Read only app-authorized frozen copies when a launcher supplies an authoritative input index.
+
+Use this authority order: instructor deck/LMS/handout/video first; assigned textbook and official standards second; reputable university/primary sources third; secondary explanations last. Record source title, author/publisher, local filename or URL, precise chapter/page/slide/video timestamp, and access date where applicable. Paraphrase instead of copying long copyrighted passages.
+
+Store source provenance in `coverage_manifest.json`. Copy the app-owned `sources` list from `source_snapshot.json` exactly, including every primary and support file in order. Put textbook, web, standards, and video research in `research_sources`, giving each one a stable ID, authority tier 1-4, title, reference, locator, and access date. If two sources disagree, do not silently merge them. Record both IDs in `source_conflicts`, state which authority controls the course-facing explanation and why, and keep the issue unresolved if the evidence is insufficient. Never invent a deadline, assigned procedure, expected measurement, diagram value, or instructor intention.
+
+### Establish Coverage and Continuity
+
+Read `.gwverify/source_snapshot.json` before outlining. It contains the ordered IDs of every source unit that must be covered. Read the previous guide or its continuity record when one exists. Start this guide with the prerequisites a student needs now, reusing established notation and terminology, and end with a concrete bridge to the next lecture.
+
+During drafting, maintain `.gwverify/coverage_manifest.json`. Every source unit must appear exactly once and point to the real Markdown heading anchor where its content is taught. The manifest is an audit map, not a substitute for including the content in the guide.
+
+---
+
+## Step 2: Writing Style — Conversational Teaching
+
+Write as if you are a patient tutor sitting next to the student, explaining one concept at a time. This is NOT a reference sheet. NOT a list of bullet points. It is a conversation that builds understanding piece by piece.
+
+### The Core Rules
+
+**Rule 1 — Break Everything Down, and Describe Before You Name**
+Every concept must be broken into the smallest possible pieces. Never assume the reader already knows a term. Introduce one idea at a time, explain it fully, then move to the next.
+
+Describe the behavior first and give it its name second: "the OS saves A's registers and loads B's — this is called a **context switch**." Bold a term exactly once, at the sentence that defines it, and never use it in plain text before that sentence. If a term must be mentioned before its own section, tag it in place — "the zombie state (defined in Section 23)" — instead of leaving it undefined or mini-defining it twice. Declare synonyms once, at the definition ("kernel mode, also called privileged mode"), then use one of them. Contrast near-synonyms in a single sentence when they first meet (a trap is caused by an instruction; an interrupt arrives between instructions). Every acronym is expanded at first use. The verifier reports terms used before their bold definition.
+
+**Rule 2 — Analogies Before Formulas, Then Say Where the Analogy Breaks**
+ALWAYS explain a concept with plain language and a relatable analogy FIRST. Only after the reader intuitively "gets it" should you present the formal definition, notation, or formula. The reader should already understand the idea before seeing the math.
+
+Every new abstraction (virtualization, address space, context switch, mechanism versus policy, race, lock, layering, …) gets one analogy from a familiar domain, stated with its explicit mapping ("the locker number is the index, the clue inside is the pointer"), immediately followed by one sentence on where the analogy breaks, and only then the formal definition. An analogy whose parts do not map onto the parts of the mechanism is decoration; cut it. Bridge from things the student already owns: earlier sections of this guide, the prior guide, C, and everyday systems.
+
+**Rule 3 — Symbol-by-Symbol Formula Walkthroughs**
+Every formula must be followed immediately by a line-by-line explanation of what each symbol means, what the formula computes, and why it works. Never write a formula and move on.
+
+**Rule 4 — Line-by-Line Code Explanations**
+Every code example must be walked through line by line. Explain what each line does, why it is there, and what happens when it executes. Include execution traces with concrete values showing the full state at each step.
+
+**Rule 5 — Visuals That Teach, Not Decorate**
+ASCII art is the last resort. Use the app-owned visual packet and compiled catalog. A reviewed source-bound packet takes precedence; otherwise Guide Watcher prepares source-faithful slide/page visuals automatically, and Circuit Lab uses captured LMS video frames with procedure-step bindings to create annotated evidence. Prefer, in order: a faithful course, book, or rights-cleared web crop with precise attribution; a teacher-style annotation of that source; an app-rendered bounded deterministic diagram; a clearly labeled generated educational visual when it adds intuition; a table; then ASCII only when plain text is genuinely clearer. Use real source values and inspect every result. Generated diagrams and images are explanatory supplements, never primary source evidence.
+
+Figure economy. A figure earns its place only if the sentence after it reads something specific off it. Do not place a screenshot of code, a transcript, or a table whose full content is already typed into the guide next to it. Never place two figures back to back: the second one is either woven into its own paragraph or dropped. The paragraph that follows the `**What to notice:**` line must point at concrete elements of the figure (a label, an arrow, a value, a row) and continue the argument; it must not paraphrase the notice line, and it must never discuss why the figure was drawn a certain way. When a figure shows a trace or a computed value, verify one of its numbers in the prose right after it, the way "3 + 3 + 4 + 4 + 6 = 20 = 2 × 10 confirms the drawing" does.
+
+Do not create, download, or edit assets during writing. Return only `visual_placements` containing a catalog asset ID and the exact heading anchor where it belongs. The app publishes the selected local PNGs and creates schema-2 `asset_manifest.json`. Each selected asset must occur exactly once as a standalone `![<catalog alt>](<public path>)` line. Surround the standalone image line with blank lines so it forms its own CommonMark paragraph. Its next nonblank line must be exactly `*Figure: <catalog caption>*`, and the following nonblank line must be exactly `**What to notice:** <catalog explanation>`. Raw HTML and reference-style images are forbidden. Do not use remote hotlinks or decorative/redundant visuals. A lecture may have no images only when its app-owned packet explicitly records `no-purposeful-visual`; there is no arbitrary image quota.
+
+**Rule 6 — Progressive Concept Building**
+Each section builds on previous sections, and each guide builds on the prior guides. Briefly re-teach required prerequisites so this file works alone, then connect new ideas to the established course vocabulary and notation. Do not use empty references such as “remember last week” without restating the exact idea needed now.
+
+**Rule 7 — Weave Textbook References Naturally**
+Integrate relevant textbook and authoritative web/video material in your own teaching voice rather than block-quoting it. Keep precise source provenance in the source register and cite claims where the guide format calls for it. Do not hide a source conflict by smoothing it into anonymous prose.
+
+**Rule 8 — Even Coverage, No Compressed Sections**
+The LAST section of the guide must be just as detailed and carefully explained as the FIRST. Every section gets the same depth of treatment. Do NOT rush through later material because you are running out of space. If anything, later sections should be MORE detailed because they build on more concepts.
+
+**Rule 9 — Examples Earned by Difficulty, Not Handed Out by Quota**
+Examples are the most important learning tool and the easiest thing to waste. Give each concept the number its difficulty earns, and no more:
+
+1. **A definition, a name, or a classification** ("the OS is a resource manager", "mechanism versus policy") — ONE worked example. One sorting or labelling exercise settles it. A second teaches nothing the first did not, and a third is padding the reader can feel. Close with a `**Pattern to recognize.**` line instead.
+2. **A mechanism with a trap in it** — TWO: one that shows it working end to end, and one that is harder or fails differently — a boundary, an off-by-one, a case where the obvious reading is wrong. Say what makes the second one trickier.
+3. **A genuinely layered idea, where each layer changes the method** — up to THREE, and only when the third is hard in a NEW way rather than the same exercise with new nouns.
+
+Escalation is the test. If you cannot say what a further example teaches that the previous one did not, it does not belong in the body. Vary the type of example — different inputs, scenarios, applications — rather than repeating the shape with fresh numbers. Never title a section by how many examples it holds ("Three Worked Examples on X"); a title names the question the section answers.
+
+Volume belongs in the exam-style practice section at the end, where a reader who wants drilling can drill. The body is not a drill book.
+
+Every example must be:
+- **Fully broken down** — show every intermediate step, every variable state, every decision point
+- **Annotated with reasoning** — explain WHY each step is taken, not just WHAT happens
+- **Connected to the concept** — after the example, briefly state what it demonstrated and what pattern the student should recognize
+
+For coding examples specifically: show the code, trace execution with concrete values at each step, and then present a variation that changes one aspect (different input, edge case, or constraint).
+
+For math/formula examples: work through the calculation showing every substitution, simplification, and result. Then present a second problem that looks similar but requires a different approach or has a subtle difference.
+
+Minimum: 3 worked examples per major concept, progressing from medium → hard → challenging. More is better if the concept has many facets.
+
+Place examples inside the section that teaches the mechanism, right after the mechanism, not in a separate "Three Worked Examples" subsection at the end of the guide. A section that teaches a mechanism, algorithm, data structure, or computation and contains no traced example is unfinished; the verifier reports such sections. Use a running cast the reader can follow across the guide (process A greedy, process B well-behaved; thread 1 and thread 2) and put every timing mechanism on a labeled timeline. Define any metric with a formula before comparing alternatives, then compute it on the concrete instance with the arithmetic written out (`4 + 9 + 15 = 28`). Every protection or synchronization rule gets an adversary paragraph: the program or interleaving that exploits its absence. For fork/exec material include a process graph with one feasible and one infeasible output ordering. After the solved examples, give two or three "try it yourself" variants with fresh inputs and only the final answers, so the reader can test the pattern rather than reread it.
+
+**Rule 10 — Problem First, Then Strawman, Then the Mechanism**
+Open every mechanism section with the problem it solves — what goes wrong on a machine that lacks it — before naming the mechanism. Where the source supports it, show the strawman first (direct execution, a lock-free counter, a single shared bowl of memory), list what breaks as numbered problems, and fix them in that order, closing each with "problem k solved." Keep an explicit assumption ledger when a topic is taught by relaxing assumptions one at a time (scheduling: equal lengths, simultaneous arrival, no I/O, known lengths), and say which assumption each subsection relaxes.
+
+**Rule 11 — Every Section Ends by Naming the Pattern and Asking the Next Question**
+Close every teaching section with a short paragraph beginning `**Pattern to recognize.**` that states the transferable pattern in one sentence, names the misconception it prevents, and ends with the question the next section answers. This is the reader's checkpoint; a section that trails off into a caveat has no checkpoint.
+
+**Rule 12 — Show Real Output and Read It; Close With "Why Not the Other Way?"**
+When the lecture or book runs a program, show its actual output and read it line by line ("the `f` from both processes appears before either `o` — both are running"). Never describe output you did not see in the source. End the guide's synthesis with two or three "why not the other way?" questions with one-line answers (why separate `fork` and `exec`? why descriptors instead of filenames?) — design questions are what distinguish understanding from recall.
+
+**Rule 13 — The Slides Are the Limit**
+Supplementary material (textbook chapters, lecture transcripts, standards, web sources) exists to explain what the lecture covers, not to extend it. Use it to re-teach a prerequisite the slides assume, to fill in a mechanism the slides only name, or to supply a worked example; do not add topics, sections, or terminology that are absent from the slides and the course's syllabus. When a supplementary source explains a slide topic better than the slide does, teach it that way and cite the source; when it covers something the slides do not, leave it out.
+
+---
+
+## Step 2b: Formatting Standard (mandatory)
+
+Presentation is part of teaching: the same explanation is read twice as fast when its values, states, steps, definitions, and answers are visually separated from the sentences around them. The verifier's self-check reports violations of these rules; fix them before finishing.
+
+The same explanation reads twice as fast when its numbers, states, and steps are visually separated from the sentences around them. These rules are mandatory for every guide. Every primitive used here (blockquote callouts with a bold icon-led label, tables, inline code, `$...$` KaTeX math, numbered steps) renders identically in Markdown Preview Enhanced, VS Code's built-in preview, Silk MD, and GitHub; nothing viewer-specific (GitHub `[!NOTE]` alerts, `!!! note` admonitions, raw HTML) is used. The verifier's self-check (`guide_lint.py --advisory`) reports violations under FORMATTING; the writer fixes them before finishing.
+
+### F1. Values, symbols, and expressions never sit bare in a sentence
+
+Every variable, index, array, expression, or equality is set in inline code: `j = p − 1`, `A[0..i]`, `k − p = 3` shifts, `L = [1, 3, 4, 5]`. A sentence may mention *one* such item inline; a statement with two or more becomes a list item, a table cell, or a display line of its own.
+
+Wrong: "Values smaller than 2: one, so p = 1. The scan shifts k − p = 4 − 1 = 3 values (5, 4, 3) and exits with j = p − 1 = 0."
+
+Right:
+
+- smaller than `2`: one value → `p = 1`
+- shifts: `k − p = 4 − 1 = 3` values, namely `5, 4, 3`
+- exit: `j = p − 1 = 0`
+
+### F2. State is a table, a trace is numbered steps
+
+Whenever three or more variables change across steps, show a table with one column per variable and one row per step (before and after). A sequence of actions is a numbered list, one action per item, the changed value in code. Never narrate a trace inside a paragraph.
+
+### F3. Every worked example has the same visible skeleton
+
+```
+> **🧮 Worked example (medium) — <what it shows>**
+>
+> **Given.** `L = [1, 3, 4, 5]`, `x = 2`, `i = 4`
+>
+> **Steps.**
+> 1. …
+> 2. …
+>
+> **Result.** `[1, 2, 3, 4, 5]`
+> **Check.** `p + (k − p) + 1 = 1 + 3 + 1 = 5` cells ✔
+```
+
+Difficulty is one of medium / harder / challenging and appears in the title. Given, Steps, Result, and Check are always present. A "Try it yourself" item lists its answers on one line in code.
+
+### F4. Definitions, pitfalls, and closers are callouts
+
+- `> **📘 Definition — <term>.** …` at the sentence that defines a term (the term bold exactly here).
+- `> **⚠️ Misconception.** …` where a wrong intuition is corrected.
+- `> **💡 Pattern to recognize.** …` as the closing paragraph of every teaching section.
+- `> **📝 Note.** …` for a caveat or a source discrepancy.
+
+A callout is a blockquote whose first line is a bold, icon-led label. This renders as a distinct panel in every Markdown viewer (GitHub, VS Code, Silk MD); GitHub `[!NOTE]` alert syntax is not used because several viewers print it literally.
+
+### F5. Practice items are separated and answerable without reading the answer
+
+Each item is its own `### Qn (difficulty) — <topic>` heading. The question is a blockquote. A `**Solution.**` paragraph follows after a blank line, with the final answer in bold on its own line first, then the reasoning. Items are separated by `---`.
+
+```
+### Q3 (hard) — links in a full mesh
+
+> A fully connected mesh has eight devices. How many links, and how many ports per device?
+
+**Solution.** **28 links, 7 ports each.**
+
+- links: `n(n − 1)/2 = 8 × 7 / 2 = 28`
+- ports per device: `n − 1 = 7`
+
+---
+```
+
+### F6. No paragraph longer than 120 words; every section has sub-structure
+
+A paragraph that passes 120 words is split at its argument's joints or turned into a list. Every `# N.` section has at least one `##` subsection or one callout; a section that is one continuous run of paragraphs is not finished.
+
+### F7. Math notation
+
+Identifiers, array states, and simple expressions use inline code (`j`, `A[0..i]`, `n(n − 1)/2`). Use `$…$` LaTeX (KaTeX renders it) for genuinely mathematical statements: sums, fractions, asymptotic bounds, invariants written as formulas — `$\sum_{i=1}^{n} i = \frac{n(n+1)}{2}$`, `$T(n) = O(n^2)$`. Never write a formula bare in a sentence, and never mix the two forms for the same quantity in one section.
+
+### F8. What never appears in the body
+
+- Slide narration: "Lecture PDF page 22 returns to…", "PDF page 24 attaches a green arrow…", "slide 60 is a single centred prompt". Provenance belongs in figure captions and the manifest; the body teaches the idea, not the deck.
+- Reading instructions: "First, read Chapter 2 at PDF pages 44–49". The guide *is* the reading. A short "Sources used" list at the end (title, chapter) is the only reference to the book allowed outside citations.
+- Sections invented for administrative slides (title, outline, "Any questions?", thank-you). Map those units in the coverage manifest to the nearest real section; write nothing about them.
+- Prose about the guide itself ("this section will…", "as promised above…").
+
+---
+
+## Step 3: Output Format
+
+### Header
+```
+# [Topic Title from PDF]
+
+### [Course Name] | DGIST | [Term and year verified from the current syllabus/course folder]
+### Covers: Complete lecture/week ([N] source units) + [Textbook Name Ch. X] + [other sources actually used]
+
+---
+```
+
+Detect the course name, topic, lecture/week, and current term from source material. Do not preserve a stale hard-coded term. List only the chapters and source families actually incorporated in the "Covers:" line.
+
+### Table of Contents
+```
+# TABLE OF CONTENTS
+
+1. [Descriptive Section Title](#1-descriptive-section-title)
+2. [Descriptive Section Title](#2-descriptive-section-title)
+...
+
+---
+```
+
+Each section title should be descriptive and meaningful (not "Introduction" or "Background"). Use titles that tell the reader what they will learn.
+
+### Section Format
+- Number sections: `# 1. Title`, `# 2. Title`, etc.
+- Subsections: `## 1.1 Subtitle`, `## 1.2 Subtitle`
+- Horizontal rules `---` between major sections
+- Code blocks with language tags: ```python, ```c, etc.
+- Learner visuals embedded from `<GuideStem>_assets/`, followed by their caption and “What to notice” explanation
+- ASCII diagrams in plain ``` blocks only when they are clearer than a faithful image, deterministic diagram, or table
+- Every teaching section follows this flow: the problem (what breaks without this) → analogy with its mapping and where it breaks → describe the behavior → name and bold the term → formal definition, code, or formula walked symbol by symbol → traced example with full state per step → `**Pattern to recognize.**` closer that poses the next section's question
+- The guide contains one major section titled `# N. Exam-Style Practice …`. When the collected material includes an `## EXAM PATTERN` with a past exam, mirror every question archetype found there (negative-recognition multiple choice, exact-terminology fill-ins with word-count or initial-letter hints, metric-defined schedule or design problems on a tiny instance, algorithm state after step k and after a large step count, best/worst-case timelines, fill-in-the-blank code skeletons) at least once at the exam's difficulty and once above it, using this lecture's material and never copying a question. Otherwise model the section on the lecture's own exercises. Number items `**Q1 (medium).**`, `**Q2 (hard).**`, … and give each a full `*Solution.*` with every arithmetic step written out; at least eight items.
+
+### Guide Name
+Name the output file based on the PDF filename:
+- "Week 3 - Algorithm Analysis.pdf" → "Week3_Algorithm_Analysis_Guide.md"
+- "lec2.pdf" → "lec2_Guide.md"
+- "COA_3_MIPS.pdf" → "COA_3_MIPS_Guide.md"
+- "BS202 - Lecture 03.pdf" → "BS202_Lecture_03_Guide.md"
+
+Strip spaces and special characters, keep it readable.
+
+---
+
+## Step 4: What NOT to Do
+
+- ❌ NO mechanical "Slide 15" teaching sections. Slide/page/timestamp locators are required in coverage and figure provenance, but the guide body should be organized by concepts.
+- ❌ NO block-quoted textbook passages (never use "> According to...")
+- ❌ NO bullet-point lists without prose explanation — every bullet must be explained in sentences
+- ❌ NO compressed or rushed sections — every section gets full depth
+- ❌ NO formulas without symbol-by-symbol walkthrough
+- ❌ NO code without line-by-line explanation and execution trace
+- ❌ NO jargon or technical terms without definition on first use, and NO term used in an earlier section than the one that defines it unless tagged "(defined in Section N)"
+- ❌ NO figure that is a screenshot of code or text already typed into the guide, NO two figures back to back, and NO prose about how or why a figure was drawn
+- ❌ NO mechanism named before the problem it solves has been stated
+- ❌ NO topic taught that the slides and syllabus do not cover, however good the supplementary source
+- ❌ NO section that trails off without its `**Pattern to recognize.**` closer
+- ❌ NO slide narration in the body ("Lecture PDF page 22 returns to…", "slide 60 is a single centred prompt"); teach the idea, cite a source in parentheses only when a claim needs it
+- ❌ NO reading instructions in the body ("First, read Chapter 2 at PDF pages 44–49"); the guide is the reading — record what you used in `research_notes` and, at most, a short *Sources used* list
+- ❌ NO section written for an administrative slide (title, outline, "Any questions?", thank-you); map such units in the coverage manifest to the nearest real section and write nothing about them
+- ❌ NO values, expressions, or state left bare inside sentences; NO paragraph over 120 words; NO practice item without its own heading, blockquoted question, and bold answer line
+- ❌ NO "this is similar to X" without actually explaining the full concept
+- ❌ NO skipping "obvious" steps in derivations, proofs, or code traces
+- ❌ NO filler phrases ("In this section we will discuss...")
+- ❌ NO summary-only sections — every section must teach, not just list
+- ❌ NO rambling or visible self-correction in the final text. The guide is a polished artifact, NOT a stream of consciousness. NEVER leave phrases like "wait, let me redo this", "hmm", "OK that's messy", "let me give you a clean version", "honestly the layout is hard", "I can't read the PDF", "let me re-extract", or any thinking-out-loud. If you draft something wrong, DELETE the wrong version before saving — the reader must never see a false start.
+- ❌ NO inventing a "cleaner" substitute figure when the real one is hard to draw. Crop or annotate the actual source, produce a faithful deterministic reconstruction with unchanged values, or give a complete data table. Never use `...` placeholders or a simplified graph that changes the source.
+- ❌ NO decorative images that do not support a stated learning purpose.
+- ❌ NO unlabeled generated image presented as a factual source figure.
+- ❌ NO remote image hotlinks, learner assets inside `.gwverify`, or asset paths that escape `<GuideStem>_assets/`.
+- ❌ NO silent resolution of conflicting sources and no invented measurements, deadlines, assignments, or instructor intent.
+
+---
+
+## Step 5: Quality Checklist
+
+Before saving the guide, verify ALL of these:
+
+- [ ] Every formula has a symbol-by-symbol walkthrough
+- [ ] Every code example has a line-by-line explanation with concrete execution trace
+- [ ] Visuals follow the source/annotation/deterministic/generated/table/ASCII hierarchy and each has a teaching purpose
+- [ ] Every embedded image is an app-catalog placement in its linked source-unit section, occurs exactly once, and has matching alt text, caption, and “What to notice” explanation
+- [ ] Learner visuals are local in `<GuideStem>_assets/`; `.gwverify` contains audit evidence only
+- [ ] Every major concept has 3+ worked examples progressing from medium → hard → challenging
+- [ ] Examples are varied in type (different inputs, scenarios, edge cases) — no two examples feel the same
+- [ ] Challenging examples are genuinely tricky (exam-level) but not obscure — they test deep understanding
+- [ ] The guide reads like a patient conversation, not a reference sheet
+- [ ] Later sections are EQUALLY detailed as early sections (check this explicitly)
+- [ ] Textbook content is woven in naturally, never block-quoted
+- [ ] A student reading ONLY this guide would fully understand the entire lecture
+- [ ] Every ordered ID in `source_snapshot.json` appears exactly once in `coverage_manifest.json` and maps to a real guide heading
+- [ ] Every lecture slide/page/section/video segment is substantively taught — nothing is skipped
+- [ ] Prerequisites are scaffolded inside this guide, prior-guide terminology is continued, and a forward bridge is recorded
+- [ ] Source conflicts and unresolved gaps are recorded explicitly; no missing fact is invented
+- [ ] The course term is verified from current source material, not copied from an old template
+- [ ] Every technical term is defined on first use, bold exactly at its definition, and never used in an earlier section untagged
+- [ ] Every abstraction has an analogy with an explicit mapping, followed by where it breaks, before its formal definition
+- [ ] Every mechanism section opens with the problem it solves and contains a traced example co-located with the mechanism
+- [ ] Every teaching section closes with a `**Pattern to recognize.**` paragraph that poses the next question
+- [ ] Every figure is followed by prose that reads specific elements off it; no code screenshots, no back-to-back figures
+- [ ] The Exam-Style Practice section mirrors every archetype of the supplied past exam at exam level and above, with full solutions
+- [ ] Every value, expression, and state is in code spans, `$…$` math, a list, or a table; every worked example has the Given / Steps / Result / Check skeleton; every definition, misconception, and closer is a callout
+- [ ] No slide narration, no reading instructions, and no section for an administrative slide anywhere in the body
+
+---
+
+## Step 6: Native Verification & Cleanup Phase
+
+After drafting the guide, do a second pass before you consider it finished. This pass is part of the guide, not a separate chat with the student.
+
+### 6.1 Compare Against the Real Slides
+
+Rendered source images in `.gwverify` are private audit evidence. Inspect them for every figure-heavy source unit:
+
+- graphs and arrow directions
+- edge weights and labels
+- tables and final values
+- memory layouts, stack/heap diagrams, cache diagrams
+- algorithm traces and intermediate states
+
+Text extraction is not enough. It can drop arrowheads, merge numbers, lose layout, or hide which label belongs to which edge. Never replace a hard-to-read lecture figure with a made-up cleaner example. Create a faithful learner-facing crop/annotation in `<GuideStem>_assets/`, a deterministic reconstruction, or a complete table preserving the real values.
+
+For each embedded image, use this exact reader-facing pattern:
+
+```markdown
+![Descriptive alt text](<GuideStem>_assets/descriptive-name.png)
+*Figure: A concise caption that identifies what the learner is seeing.*
+**What to notice:** Explain where to look, how to read the marks or state, and what misconception the picture prevents.
+```
+
+The alt text, caption, and explanation must match the record in `<GuideStem>_assets/asset_manifest.json`. The asset record must include `provenance.type`, `source`, `locator`, and `transformation`. A source locator is specific: for example `slide 12`, `textbook page 147`, or `video 00:04:32`. For an original deterministic/generated visual, say explicitly why a source locator is not applicable.
+
+### 6.2 Remove Draft Artifacts
+
+The final guide must not show the model's working process. Delete false starts, self-corrections, failed traces, and uncertainty language before saving. The reader should see one clean explanation, not the attempts that led to it.
+
+Common forbidden leftovers:
+
+- "wait", "hmm", "let me re-extract", "let me redraw", "honestly this is messy"
+- "I cannot read the PDF", "the diagram is hard to parse"
+- "clean illustrative version" when the lecture figure has different values
+- TODO/FIXME/placeholder markers
+- mechanical slide-number section headings; precise slide/page/timestamp locators in provenance are required and should remain
+- unbalanced code fences
+
+### 6.3 Verify Worked Computations Without Model-Authored Code
+
+Recompute worked calculations, graph traces, dynamic-programming tables, cache simulations, memory layouts, and bit arithmetic during the independent review pass. Write explicit intermediate states in the guide so the fixed app-owned verifier and a human reviewer can inspect them. The native gate recomputes supported scalar arithmetic itself. Never create `verify.py` or any other executable artifact; Guide Watcher does not execute model-authored code and does not require Docker.
+
+### 6.4 Repair Until the Native Gate Passes
+
+The launcher will run `guide_lint.py` after generation. If it fails, read the lint log and fix the guide, coverage manifest, learner assets, or asset manifest as named by the failure. Do not modify the original source or its snapshot to make a mismatch disappear.
+
+When the launcher says that it owns file writes, return the complete guide followed by its exact private artifact block with `coverage_manifest`, `visual_placements`, and `verification_harness: null` instead of trying to write sidecars. The launcher validates the typed bundle, materializes `coverage_manifest.json` and the app-owned schema-2 `asset_manifest.json` into job staging, removes the private block from the guide, and publishes all artifacts together only after every gate passes. In a direct/manual recovery run with explicitly authorized writes, create those files in their documented locations instead.
+
+Do not write `<!-- guide-watcher:complete:v1 -->` yourself. The native gate removes premature markers and seals the guide atomically only after source integrity, complete coverage, continuity, visual provenance, structure, depth, and computation checks all pass.
+
+### 6.5 Coverage Manifest Shape
+
+Write `.gwverify/coverage_manifest.json` using this schema. Use every unit ID from `source_snapshot.json` exactly once and use real GitHub-style heading anchors from the guide:
+
+```json
+{
+  "schema_version": 2,
+  "guide": "Lecture_Guide.md",
+  "guide_kind": "lecture",
+  "primary_source_id": "<copy exactly from source_snapshot.json>",
+  "sources": [
+    {
+      "id": "<copy exact app-owned source ID>",
+      "path": "<copy exact absolute source path>",
+      "sha256": "<copy exactly from source_snapshot.json>",
+      "role": "primary"
+    }
+  ],
+  "research_sources": [
+    {
+      "id": "rfc-example",
+      "tier": 2,
+      "kind": "standard",
+      "title": "Authoritative source title",
+      "reference": "https://example.invalid/source",
+      "locator": "section or page",
+      "accessed": "YYYY-MM-DD"
+    }
+  ],
+  "units": [
+    {"id": "<exact app-owned unit ID>", "source_id": "<owning source ID>", "guide_anchor": "1-prerequisite-bridge", "topic": "What this source unit contributes"}
+  ],
+  "continuity": {
+    "prerequisites": ["Specific idea re-taught in this guide"],
+    "prior_guides": [
+      {
+        "identity": "<copy exact generation identity>",
+        "path": "<copy exact absolute predecessor path>",
+        "sha256": "<copy exact predecessor SHA-256>",
+        "bridge": "How this guide uses that predecessor",
+        "evidence": ["Specific prior concept or example used here"]
+      }
+    ],
+    "next_bridge": "Specific capability this lecture enables next"
+  },
+  "source_conflicts": [],
+  "unresolved_gaps": [],
+  "visual_plan": {
+    "required": true,
+    "rationale": "Which spatial or procedural ideas need learner-visible visuals"
+  },
+  "verification_plan": {
+    "required": false,
+    "rationale": "Fixed app-owned checks validate supported arithmetic; model-authored executable code is forbidden"
+  }
+}
+```
+
+### 6.6 App-Owned Visual Placement and Asset Manifest
+
+The writer does not author the asset manifest. Return placements in the private artifact block:
+
+```json
+{
+  "visual_placements": [
+    {"asset_id": "annotated-flow", "section_anchor": "3-packet-forwarding"}
+  ]
+}
+```
+
+The app creates the manifest from those placements and its compiled catalog. The native gate requires a bijection between selected records, PNG files, and Markdown occurrences and rejects duplicate bytes, render specs, or learning purposes.
+
+---
+
+## Step 7: Course-Specific Modes
+
+### Circuit Theory and Measurement Lab
+
+Use the LMS announcement, that Friday’s instructor video, and the assigned handout to determine the actual weekly lab. A general equipment manual is background, not proof that every listed experiment is assigned. Preserve the complete timestamped video transcript and require every procedure step to cite the exact transcript-segment IDs that support it. Capture enough actual video-element frames to show equipment state, probe placement, wiring, and the expected display. Every automatic callout must use a content-aware target selected from the frozen frame and point to the relevant control, probe, terminal, connection, display, or safety state; a generic center target is invalid. A separate visual-review pass must approve every target. Place annotations without covering important labels.
+
+Set `guide_kind` to `circuit-lab`. The app-owned visual contract is the authority for the complete procedure inventory. Copy every contracted step's `id`, `kind`, `guide_anchor`, and `need_ids` into `lab_steps` exactly and in the same order; do not omit, add, relabel, downgrade, or move a step. Add `goal`, `action`, `expected`, `wrong`, and `recovery` teaching fields. A physical step also has `primary_visual_asset_id` and `visual_evidence` entries with `asset_id` and one of `before`, `action`, `expected`, `wrong-state`, or `recovery`. Its primary visual must be unique selected `annotated-source` evidence from the instructor material, bound only to that step, backed by a source unit explicitly mapped to the step or a frozen video frame that names the step, and embedded at the contracted section anchor. Every supplemental image must also bind that step and section; a generated or deterministic diagram can only supplement the primary source evidence. Use as many distinct source-grounded images as genuinely help with equipment state, controls, probe placement, wiring, expected displays, diagnosis, and safe recovery, without repeating decorative views. Name terminals, ranges, controls, order of operations, and power/safety boundaries. Clearly distinguish theoretical prediction, instructor-supplied expected result, and measurement the student must obtain. Never invent a reading.
+
+The app-owned `action` text is immutable evidence from the transcript-backed procedure inventory. Copy it exactly into each matching `lab_steps` record; put additional teaching detail in `goal`, `expected`, `wrong`, and `recovery` instead of rewriting the action.
+
+### Scientific Writing
+
+Create one guide per week and preserve existing verified weeks unless the user requested repair. Treat week-numbered files as that week's sources and treat unnumbered files in the Scientific Writing course folder as shared support that must be considered for every new week. Set `guide_kind` to `scientific-writing-week` and record `week`, `discussion_prompts`, and `assignment_checkpoints` in the coverage manifest. Read the prior week before drafting the next. Keep instructor requirements, textbook advice, APA rules, sample-paper observations, and your own explanation visibly distinct. Make the week discussion-ready with close-reading prompts, evidence-to-claim exercises, revision choices, likely group questions, and assignment checkpoints. When dates or rubric wording conflict, show the conflict and its sources; do not choose silently or invent instructor intent.
