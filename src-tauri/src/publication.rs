@@ -1434,30 +1434,100 @@ impl DeletePlan {
     }
 }
 
+/// The same plan on macOS and Linux. Windows can hold a delete-on-close handle open, which this
+/// cannot; what it keeps is the guarantee that matters, that every member is proven to be the
+/// same object immediately before it is removed, so a path replaced underneath the app is
+/// refused rather than followed.
 #[cfg(not(windows))]
-struct DeletePlan;
+struct DeleteEntry {
+    path: PathBuf,
+    depth: usize,
+    is_dir: bool,
+    handle: same_file::Handle,
+}
+
+#[cfg(not(windows))]
+struct DeletePlan {
+    entries: Vec<DeleteEntry>,
+}
 
 #[cfg(not(windows))]
 impl DeletePlan {
-    fn open(_root: &Path, _label: &str) -> Result<Self, String> {
-        Err(
-            "handle-bound quarantine deletion is unsupported on this platform; data was preserved"
-                .to_string(),
-        )
+    fn open(root: &Path, label: &str) -> Result<Self, String> {
+        ensure_safe_tree(root)?;
+        let mut entries = Vec::new();
+        for entry in walkdir::WalkDir::new(root).follow_links(false) {
+            let entry = entry.map_err(|error| {
+                format!("could not enumerate quarantined {label} for cleanup: {error}")
+            })?;
+            let metadata = std::fs::symlink_metadata(entry.path()).map_err(|error| {
+                format!("could not inspect quarantined {label} member: {error}")
+            })?;
+            reject_link_or_reparse(entry.path(), &metadata)?;
+            let handle = same_file::Handle::from_path(entry.path()).map_err(|error| {
+                format!("could not identify quarantined {label} member: {error}")
+            })?;
+            entries.push(DeleteEntry {
+                path: entry.path().to_path_buf(),
+                depth: entry.depth(),
+                is_dir: metadata.is_dir(),
+                handle,
+            });
+        }
+        entries.sort_by_key(|entry| std::cmp::Reverse(entry.depth));
+        Ok(Self { entries })
     }
 
-    fn require_current_paths(&self, _label: &str) -> Result<(), String> {
-        Err(
-            "handle-bound quarantine deletion is unsupported on this platform; data was preserved"
-                .to_string(),
-        )
+    fn require_current_paths(&self, label: &str) -> Result<(), String> {
+        for entry in &self.entries {
+            let current = same_file::Handle::from_path(&entry.path).map_err(|error| {
+                format!("quarantined {label} path changed or disappeared: {error}")
+            })?;
+            if current != entry.handle {
+                return Err(format!(
+                    "quarantined {label} path identity changed; all replacements were preserved"
+                ));
+            }
+        }
+        Ok(())
     }
 
-    fn delete_bottom_up(self, _label: &str) -> Result<(), String> {
-        Err(
-            "handle-bound quarantine deletion is unsupported on this platform; data was preserved"
-                .to_string(),
-        )
+    fn delete_bottom_up(self, label: &str) -> Result<(), String> {
+        for entry in self.entries {
+            // Re-check identity immediately before removing this member, not only for the tree
+            // as a whole, so the gap between proof and removal stays as small as it can be.
+            let metadata = std::fs::symlink_metadata(&entry.path).map_err(|error| {
+                format!(
+                    "quarantined {label} member disappeared before deletion {}: {error}",
+                    entry.path.display()
+                )
+            })?;
+            reject_link_or_reparse(&entry.path, &metadata)?;
+            let current = same_file::Handle::from_path(&entry.path).map_err(|error| {
+                format!(
+                    "could not re-identify quarantined {label} member {}: {error}",
+                    entry.path.display()
+                )
+            })?;
+            if current != entry.handle {
+                return Err(format!(
+                    "quarantined {label} member {} was replaced before deletion; it was preserved",
+                    entry.path.display()
+                ));
+            }
+            let removed = if entry.is_dir {
+                std::fs::remove_dir(&entry.path)
+            } else {
+                std::fs::remove_file(&entry.path)
+            };
+            removed.map_err(|error| {
+                format!(
+                    "could not delete quarantined {label} member {}: {error}",
+                    entry.path.display()
+                )
+            })?;
+        }
+        Ok(())
     }
 }
 
