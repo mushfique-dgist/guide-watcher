@@ -28,5 +28,21 @@
   "ffprobe_executable": "C:/Program Files/ffmpeg/bin/ffprobe.exe",
   "transcription_uv_executable": "C:/Users/you/AppData/Local/uv/uv.exe",
   "transcription_script": "C:/Users/you/Documents/Study/guide-watcher/scripts/transcribe_audio.py",
-  "circuit_lab_course_id": "_00000_1"
+  "circuit_lab_course_id": "_00000_1",
+
+  // The subjects to watch. One entry per folder inside watch_dir. Only "id", "label" and
+  // "folder" are required; everything else has a sensible default.
+  //
+  //   "lecture_files"  optional case-insensitive regular expression. Only files whose NAME
+  //                    matches it start a guide, which is how you say "my lectures are
+  //                    Week01.pdf, Week02.pdf" and your textbook in the same folder is not one.
+  //                    Leave it out and every supported file counts.
+  //   "description"    shown in the app when you pick a subject.
+  "courses": [
+    { "id": "photography", "label": "Photography", "folder": "Photography",
+      "lecture_files": "^lesson[0-9]+.*\\.pdf$",
+      "description": "One guide per lesson, covering every slide." },
+    { "id": "anatomy", "label": "Anatomy", "folder": "Anatomy",
+      "description": "One guide per source document." }
+  ]
 }

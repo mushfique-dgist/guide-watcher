@@ -5364,7 +5364,7 @@ mod tests {
         let (context, _, captured) = super::extract_textbook_context(
             root.to_str().unwrap(),
             lecture.to_str().unwrap(),
-            LecturePrimaryRule::AlgorithmsLecture,
+            LecturePrimaryRule::Named(r"^l[0-9]+([_ -].*)?\.pdf$"),
             "algorithm analysis",
             true,
             &mut super::PreflightResourceBudget::new(),
