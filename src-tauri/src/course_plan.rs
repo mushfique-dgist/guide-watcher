@@ -12,13 +12,13 @@ use uuid::Uuid;
 const SCIENTIFIC_WRITING_WEEK_ONE_RELATIVE: &str =
     "Scientific Writing/Week 1 Complete Study and Group Discussion Guide.md";
 fn scientific_writing_week_one() -> PathBuf {
-    Path::new(config::FIFTH_SEMESTER_ROOT).join(SCIENTIFIC_WRITING_WEEK_ONE_RELATIVE)
+    Path::new(&config::watch_dir()).join(SCIENTIFIC_WRITING_WEEK_ONE_RELATIVE)
 }
 const SCIENTIFIC_WRITING_WEEK_ONE_SHA256: &str =
     "35695b54e256d19d49eb154cb308b1e725a33c60f92e7987238d7d93900c31d3";
 const CIRCUIT_LAB_RELATIVE: &str = "Circuit Theory & Measurement Lab";
 fn circuit_lab_root() -> PathBuf {
-    Path::new(config::FIFTH_SEMESTER_ROOT).join(CIRCUIT_LAB_RELATIVE)
+    Path::new(&config::watch_dir()).join(CIRCUIT_LAB_RELATIVE)
 }
 const CIRCUIT_LAB_WEEK_ONE_RELATIVE: &str = "Circuit_Lab_Week_01_Orientation_and_Measurement_Setup_Guide.md";
 fn circuit_lab_week_one() -> PathBuf {
@@ -61,14 +61,14 @@ pub enum GuideMode {
     LegacyAuto,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LecturePrimaryRule {
     /// Every supported file in the folder can be the primary source of a guide.
     Any,
     /// Only files whose name matches this case-insensitive regular expression, which the user
     /// writes in the settings file. This is how a course says "my lectures are CH01.pdf,
     /// CH02.pdf" without the app having to know anything about the subject.
-    Named(&'static str),
+    Named(String),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -173,34 +173,38 @@ pub struct BoundGenerationContract {
 }
 
 pub fn configured_courses() -> Result<Vec<ResolvedCourse>, String> {
-    let specifications = config::COURSES.iter().map(|course| {
+    let configured = config::settings();
+    let specifications = configured.courses.iter().map(|course| {
         (
-            course.id,
-            course.label,
-            config::course_root(course),
-            match course.mode {
+            course.id.clone(),
+            course.label.clone(),
+            configured.course_root(course),
+            match course.mode.as_str() {
                 "weekly-lab" => GuideMode::WeeklyLab,
                 "weekly-material" => GuideMode::WeeklyMaterial,
                 "legacy-auto" => GuideMode::LegacyAuto,
                 _ => GuideMode::LectureDeck,
             },
-            match course.kind {
+            match course.kind.as_str() {
                 "circuit-lab" => GuideKind::CircuitLab,
                 "scientific-writing-week" => GuideKind::ScientificWritingWeek,
                 "course-week" => GuideKind::CourseWeek,
                 _ => GuideKind::Lecture,
             },
-            match course.lecture_files {
-                Some(pattern) => LecturePrimaryRule::Named(pattern),
-                None => LecturePrimaryRule::Any,
+            if course.lecture_files.trim().is_empty() {
+                LecturePrimaryRule::Any
+            } else {
+                LecturePrimaryRule::Named(course.lecture_files.clone())
             },
-            course.order as u8,
+            0u8,
         )
     });
 
     specifications
+        .enumerate()
         .map(
-            |(id, label, root, mode, kind, lecture_primary_rule, order)| {
+            |(order, (id, label, root, mode, kind, lecture_primary_rule, _))| {
+                let order = order as u8;
                 let root = canonical_directory(Path::new(&root), "course root")?;
                 let pinned_baseline = if id == "scientific-writing" {
                     Some(PinnedBaseline {
@@ -212,8 +216,8 @@ pub fn configured_courses() -> Result<Vec<ResolvedCourse>, String> {
                     None
                 };
                 Ok(ResolvedCourse {
-                    id: id.to_string(),
-                    label: label.to_string(),
+                    id: id.clone(),
+                    label: label.clone(),
                     root,
                     guide_mode: mode,
                     lecture_primary_rule,
@@ -351,7 +355,7 @@ fn is_scannable_source_with_courses(path: &Path, courses: &[ResolvedCourse]) -> 
         return false;
     };
     match course.guide_mode {
-        GuideMode::LectureDeck => is_allowed_lecture_primary(&path, course.lecture_primary_rule),
+        GuideMode::LectureDeck => is_allowed_lecture_primary(&path, &course.lecture_primary_rule),
         GuideMode::LegacyAuto => true,
         GuideMode::WeeklyLab | GuideMode::WeeklyMaterial => source_week(&path, course.guide_mode)
             .ok()
@@ -542,7 +546,7 @@ fn plan_course_sources(
         GuideMode::LectureDeck => sources
             .into_iter()
             .map(|source| {
-                if !is_allowed_lecture_primary(&source, course.lecture_primary_rule) {
+                if !is_allowed_lecture_primary(&source, &course.lecture_primary_rule) {
                     return Err(format!(
                         "selected source does not match the conservative lecture-primary rule for '{}': {}",
                         course.id,
@@ -715,7 +719,7 @@ fn historical_predecessors(plan: &PlannedGuide) -> Result<Vec<PlannedPredecessor
             .filter(|path| {
                 path.to_str().is_some_and(|text| {
                     config::is_watched_extension(text) && !config::should_skip(text)
-                }) && is_allowed_lecture_primary(path, plan.course.lecture_primary_rule)
+                }) && is_allowed_lecture_primary(path, &plan.course.lecture_primary_rule)
             })
             .collect::<Vec<_>>();
         sources.sort_by(|left, right| natural_path_cmp(left, right, &plan.course.root));
@@ -1004,11 +1008,11 @@ fn is_week_primary(path: &Path, mode: GuideMode) -> bool {
 /// Whether `path` is one of this course's own lecture decks by the course's naming rule.
 /// `Any` recognizes nothing here: it admits every file as a primary source, so it cannot
 /// single out sibling decks.
-pub(crate) fn is_sibling_lecture_deck(path: &Path, rule: LecturePrimaryRule) -> bool {
-    rule != LecturePrimaryRule::Any && is_allowed_lecture_primary(path, rule)
+pub(crate) fn is_sibling_lecture_deck(path: &Path, rule: &LecturePrimaryRule) -> bool {
+    *rule != LecturePrimaryRule::Any && is_allowed_lecture_primary(path, rule)
 }
 
-fn is_allowed_lecture_primary(path: &Path, rule: LecturePrimaryRule) -> bool {
+fn is_allowed_lecture_primary(path: &Path, rule: &LecturePrimaryRule) -> bool {
     let LecturePrimaryRule::Named(pattern) = rule else {
         return true;
     };
@@ -1620,32 +1624,29 @@ mod tests {
 
     #[test]
     fn a_configured_pattern_picks_the_lectures_out_of_a_folder() {
-        let chapters = LecturePrimaryRule::Named(r"^ch[0-9]+([_ -].*)?\.pdf$");
+        let chapters = LecturePrimaryRule::Named(r"^ch[0-9]+([_ -].*)?\.pdf$".to_string());
         assert!(is_allowed_lecture_primary(
             Path::new("CH02_Physical Layer (1).pdf"),
-            chapters
+            &chapters
         ));
         // The textbook in the same folder is not a lecture.
-        assert!(!is_allowed_lecture_primary(
-            Path::new("Computer Networking textbook.pdf"),
-            chapters
-        ));
+        assert!(!is_allowed_lecture_primary(Path::new("Computer Networking textbook.pdf"), &chapters));
 
         // Patterns are matched case-insensitively, so nobody has to think about it.
-        let lessons = LecturePrimaryRule::Named(r"^lesson[0-9]+.*\.pdf$");
-        assert!(is_allowed_lecture_primary(Path::new("Lesson04 Composition.pdf"), lessons));
-        assert!(!is_allowed_lecture_primary(Path::new("Reading list.pdf"), lessons));
+        let lessons = LecturePrimaryRule::Named(r"^lesson[0-9]+.*\.pdf$".to_string());
+        assert!(is_allowed_lecture_primary(Path::new("Lesson04 Composition.pdf"), &lessons));
+        assert!(!is_allowed_lecture_primary(Path::new("Reading list.pdf"), &lessons));
 
         // Any subject can be watched without writing a pattern at all.
         for name in ["Anything At All.pdf", "notes.docx", "slides.pptx"] {
-            assert!(is_allowed_lecture_primary(Path::new(name), LecturePrimaryRule::Any));
+            assert!(is_allowed_lecture_primary(Path::new(name), &LecturePrimaryRule::Any));
         }
 
         // A pattern with a typo must not hide every lecture the user owns: it fails open, so
         // they see their files and can fix the settings, rather than facing an empty folder.
-        let broken = LecturePrimaryRule::Named(r"^ch[0-9+([_ -.pdf$");
-        assert!(is_allowed_lecture_primary(Path::new("CH02 Physical Layer.pdf"), broken));
-        assert!(is_allowed_lecture_primary(Path::new("anything.pdf"), broken));
+        let broken = LecturePrimaryRule::Named(r"^ch[0-9+([_ -.pdf$".to_string());
+        assert!(is_allowed_lecture_primary(Path::new("CH02 Physical Layer.pdf"), &broken));
+        assert!(is_allowed_lecture_primary(Path::new("anything.pdf"), &broken));
     }
 
     #[test]

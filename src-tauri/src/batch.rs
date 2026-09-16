@@ -439,12 +439,12 @@ fn ensure_preflight_current(
 
 fn validate_runtime_files() -> Result<(), String> {
     for (path, label) in [
-        (crate::config::TEMPLATE_FILE, "template file"),
-        (crate::config::DEPTH_CONTRACT_FILE, "depth contract"),
-        (crate::config::RENDER_SLIDES_SCRIPT, "source renderer"),
-        (crate::config::GUIDE_LINT_SCRIPT, "guide verifier"),
+        (&crate::config::template_file(), "template file"),
+        (&crate::config::depth_contract_file(), "depth contract"),
+        (&crate::config::render_slides_script(), "source renderer"),
+        (&crate::config::guide_lint_script(), "guide verifier"),
         (
-            crate::config::GUIDE_LINT_REQUIREMENTS,
+            &crate::config::guide_lint_requirements(),
             "guide verifier dependency lock",
         ),
     ] {
@@ -876,11 +876,11 @@ mod tests {
     fn unique_runtime_dependency_bytes() -> u64 {
         let mut paths = std::collections::HashSet::new();
         [
-            crate::config::TEMPLATE_FILE,
-            crate::config::DEPTH_CONTRACT_FILE,
-            crate::config::RENDER_SLIDES_SCRIPT,
-            crate::config::GUIDE_LINT_SCRIPT,
-            crate::config::GUIDE_LINT_REQUIREMENTS,
+            &crate::config::template_file(),
+            &crate::config::depth_contract_file(),
+            &crate::config::render_slides_script(),
+            &crate::config::guide_lint_script(),
+            &crate::config::guide_lint_requirements(),
         ]
         .into_iter()
         .map(PathBuf::from)
@@ -1276,7 +1276,7 @@ mod tests {
                     + std::fs::metadata(&textbook).unwrap().len()
                     - 1
             } else {
-                std::fs::metadata(crate::config::TEMPLATE_FILE)
+                std::fs::metadata(crate::config::template_file())
                     .unwrap()
                     .len()
                     - 1

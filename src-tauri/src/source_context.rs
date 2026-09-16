@@ -1197,25 +1197,25 @@ pub(crate) fn preflight_source_material_with_runtime_probe_and_budget_and_visual
 ) -> Result<SourceMaterial, String> {
     ensure_preflight_current(cancellation)?;
     let (template, template_dependency, _) =
-        capture_utf8_dependency(Path::new(config::TEMPLATE_FILE), "template file", budget)?;
+        capture_utf8_dependency(Path::new(&config::template_file()), "template file", budget)?;
     let (depth_contract, depth_dependency, _) = capture_utf8_dependency(
-        Path::new(config::DEPTH_CONTRACT_FILE),
+        Path::new(&config::depth_contract_file()),
         "depth contract",
         budget,
     )?;
     let (_, renderer_dependency, renderer_script_bytes) = capture_utf8_dependency(
-        Path::new(config::RENDER_SLIDES_SCRIPT),
+        Path::new(&config::render_slides_script()),
         "source renderer",
         budget,
     )?;
     let (_, verifier_dependency, verifier_script_bytes) = capture_utf8_dependency(
-        Path::new(config::GUIDE_LINT_SCRIPT),
+        Path::new(&config::guide_lint_script()),
         "guide verifier",
         budget,
     )?;
     let (verifier_requirements, verifier_requirements_dependency, verifier_requirements_bytes) =
         capture_utf8_dependency(
-            Path::new(config::GUIDE_LINT_REQUIREMENTS),
+            Path::new(&config::guide_lint_requirements()),
             "guide verifier dependency lock",
             budget,
         )?;
@@ -1339,7 +1339,7 @@ pub(crate) fn preflight_source_material_with_runtime_probe_and_budget_and_visual
         extract_textbook_context(
             &output_dir.to_string_lossy(),
             primary_path,
-            plan.course.lecture_primary_rule,
+            &plan.course.lecture_primary_rule,
             &lecture,
             true,
             budget,
@@ -2413,17 +2413,17 @@ fn validate_frozen_runtime_bytes(
 ) -> Result<(), String> {
     for (requested, bytes, label) in [
         (
-            Path::new(config::RENDER_SLIDES_SCRIPT),
+            Path::new(&config::render_slides_script()),
             renderer_bytes,
             "source renderer",
         ),
         (
-            Path::new(config::GUIDE_LINT_SCRIPT),
+            Path::new(&config::guide_lint_script()),
             script_bytes,
             "guide verifier",
         ),
         (
-            Path::new(config::GUIDE_LINT_REQUIREMENTS),
+            Path::new(&config::guide_lint_requirements()),
             requirements_bytes,
             "guide verifier dependency lock",
         ),
@@ -3749,7 +3749,7 @@ fn decode_xml_entities(text: &str) -> String {
 pub(crate) fn extract_textbook_context(
     output_dir: &str,
     lecture_path: &str,
-    lecture_rule: LecturePrimaryRule,
+    lecture_rule: &LecturePrimaryRule,
     lecture_text: &str,
     markdown_headings: bool,
     budget: &mut PreflightResourceBudget,
@@ -3956,7 +3956,7 @@ pub fn clamp_for_prompt(text: &str, max_chars: usize) -> String {
 fn find_textbook_candidates(
     output_dir: &str,
     lecture_path: &str,
-    lecture_rule: LecturePrimaryRule,
+    lecture_rule: &LecturePrimaryRule,
 ) -> Result<Vec<PathBuf>, String> {
     let lecture = normalize_path(lecture_path);
     walk_course_files(output_dir, |path| {
@@ -5318,7 +5318,7 @@ mod tests {
         let (context, dependencies, captured) = super::extract_textbook_context(
             root.to_str().unwrap(),
             lecture.to_str().unwrap(),
-            LecturePrimaryRule::Any,
+            &LecturePrimaryRule::Any,
             "operating system process",
             true,
             &mut super::PreflightResourceBudget::new(),
@@ -5364,7 +5364,7 @@ mod tests {
         let (context, _, captured) = super::extract_textbook_context(
             root.to_str().unwrap(),
             lecture.to_str().unwrap(),
-            LecturePrimaryRule::Named(r"^l[0-9]+([_ -].*)?\.pdf$"),
+            &LecturePrimaryRule::Named(r"^l[0-9]+([_ -].*)?\.pdf$".to_string()),
             "algorithm analysis",
             true,
             &mut super::PreflightResourceBudget::new(),
@@ -5399,7 +5399,7 @@ mod tests {
         let (context, _, captured) = super::extract_textbook_context(
             root.to_str().unwrap(),
             lecture.to_str().unwrap(),
-            LecturePrimaryRule::Any,
+            &LecturePrimaryRule::Any,
             &pages.join("\n"),
             true,
             &mut super::PreflightResourceBudget::new(),
@@ -5532,7 +5532,7 @@ mod tests {
             super::extract_textbook_context(
                 root.to_str().unwrap(),
                 lecture.to_str().unwrap(),
-                LecturePrimaryRule::Any,
+                &LecturePrimaryRule::Any,
                 "process",
                 true,
                 &mut super::PreflightResourceBudget::new(),
@@ -5975,7 +5975,7 @@ mod tests {
                     max_pages: super::MAX_BATCH_RENDERED_PAGES,
                     max_pixel_work: super::MAX_BATCH_RENDER_PIXEL_WORK,
                 },
-                &std::fs::read(crate::config::RENDER_SLIDES_SCRIPT).unwrap(),
+                &std::fs::read(crate::config::render_slides_script()).unwrap(),
             )
             .unwrap();
         crate::process_registry::finish(cancellation);
@@ -6011,7 +6011,7 @@ mod tests {
                     max_pages: 1,
                     max_pixel_work: super::MAX_BATCH_RENDER_PIXEL_WORK,
                 },
-                &std::fs::read(crate::config::RENDER_SLIDES_SCRIPT).unwrap(),
+                &std::fs::read(crate::config::render_slides_script()).unwrap(),
             )
             .unwrap_err();
         crate::process_registry::finish(cancellation);
@@ -6133,7 +6133,7 @@ mod tests {
 
     #[test]
     fn verifier_dependency_lock_and_installed_runtime_must_match_exactly() {
-        let lock = std::fs::read_to_string(crate::config::GUIDE_LINT_REQUIREMENTS).unwrap();
+        let lock = std::fs::read_to_string(crate::config::guide_lint_requirements()).unwrap();
         let expected = parse_verifier_dependency_lock(&lock).unwrap();
         assert_eq!(expected, "4.2.0");
         for invalid in [

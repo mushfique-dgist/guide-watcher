@@ -324,11 +324,11 @@ async fn prepare_circuit_lab_week_inner(
     requested_source: Option<PathBuf>,
     cancellation: process_registry::CancellationToken,
 ) -> Result<CircuitPreparationOutcome, String> {
-    let course_root = Path::new(config::FIFTH_SEMESTER_ROOT)
+    let course_root = Path::new(&config::watch_dir())
         .join("Circuit Theory & Measurement Lab")
         .canonicalize()
         .map_err(|error| format!("could not resolve Circuit Lab course root: {error}"))?;
-    let lms_agent = Path::new(config::DGIST_LMS_AGENT_ROOT)
+    let lms_agent = Path::new(&config::lms_agent_root())
         .canonicalize()
         .map_err(|error| format!("could not resolve DGIST LMS agent: {error}"))?;
     let _capture_lock = CaptureLock::acquire(&course_root, week)?;
@@ -351,7 +351,7 @@ async fn prepare_circuit_lab_week_inner(
         "src/cli/capture-course.ts",
         &[
             "--course-id",
-            config::CIRCUIT_LAB_COURSE_ID,
+            &config::circuit_lab_course_id(),
             "--label",
             &course_capture_label,
         ],
@@ -399,7 +399,7 @@ async fn prepare_circuit_lab_week_inner(
     )?;
     let announcement_snapshot: AnnouncementSnapshot = serde_json::from_slice(&records_bytes)
         .map_err(|error| format!("normalized LMS announcement records are invalid: {error}"))?;
-    validate_announcement_snapshot(&announcement_snapshot, config::CIRCUIT_LAB_COURSE_ID)?;
+    validate_announcement_snapshot(&announcement_snapshot, &config::circuit_lab_course_id())?;
     let selected_announcement = select_announcement_record(&announcement_snapshot, week)?;
     let page_bytes = read_bounded(
         &text_path,
@@ -644,7 +644,7 @@ async fn transcribe_audio(
         OsString::from("--with"),
         OsString::from(config::TRANSCRIPTION_REQUIREMENT),
         OsString::from("python"),
-        OsString::from(config::TRANSCRIPTION_SCRIPT),
+        OsString::from(&config::transcription_script()),
         OsString::from("--audio"),
         audio_path.as_os_str().to_os_string(),
         OsString::from("--output"),
@@ -657,7 +657,7 @@ async fn transcribe_audio(
         OsString::from(duration_seconds.to_string()),
     ];
     run_registered(
-        Path::new(config::TRANSCRIPTION_UV_EXECUTABLE),
+        Path::new(&config::transcription_uv_executable()),
         &args,
         target,
         None,
@@ -2018,20 +2018,20 @@ fn build_circuit_codex_args(
 }
 
 fn resolve_lms_runtime(lms_agent: &Path) -> Result<LmsRuntime, String> {
-    let node = Path::new(config::DGIST_LMS_NODE_EXECUTABLE)
+    let node = Path::new(&config::lms_node_executable())
         .canonicalize()
         .map_err(|error| format!("could not resolve configured Node executable: {error}"))?;
     if !node.is_file() {
         return Err("configured Node runtime is not a regular file".to_string());
     }
-    let tsx_cli = bind_lms_runtime_file(lms_agent, config::DGIST_LMS_TSX_CLI, "pinned tsx CLI")?;
-    let ffmpeg = Path::new(config::DGIST_FFMPEG_EXECUTABLE)
+    let tsx_cli = bind_lms_runtime_file(lms_agent, &config::lms_tsx_cli(), "pinned tsx CLI")?;
+    let ffmpeg = Path::new(&config::ffmpeg_executable())
         .canonicalize()
         .map_err(|error| format!("could not resolve configured FFmpeg executable: {error}"))?;
     if !ffmpeg.is_file() {
         return Err("configured FFmpeg runtime is not a regular file".to_string());
     }
-    let ffprobe = Path::new(config::DGIST_FFPROBE_EXECUTABLE)
+    let ffprobe = Path::new(&config::ffprobe_executable())
         .canonicalize()
         .map_err(|error| format!("could not resolve configured FFprobe executable: {error}"))?;
     if !ffprobe.is_file() {
@@ -2787,7 +2787,7 @@ mod tests {
         std::fs::write(shadow.join("node.cmd"), b"@echo MALICIOUS-PATH-NODE\r\n").unwrap();
         let script = root.join("probe.mjs");
         std::fs::write(&script, b"process.stdout.write('EXACT-NODE-RUNTIME')\n").unwrap();
-        let node = Path::new(config::DGIST_LMS_NODE_EXECUTABLE)
+        let node = Path::new(&config::lms_node_executable())
             .canonicalize()
             .unwrap();
         let path_value = shadow.to_string_lossy().to_string();

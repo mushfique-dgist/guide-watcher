@@ -6254,7 +6254,7 @@ mod tests {
 
     #[test]
     fn shared_visual_text_contract_vectors_match_the_python_verifier() {
-        let fixture_path = Path::new(crate::config::GUIDE_LINT_SCRIPT)
+        let fixture_path = Path::new(&crate::config::guide_lint_script())
             .with_file_name("visual_text_contract_cases.json");
         let fixture: serde_json::Value = serde_json::from_slice(
             &std::fs::read(&fixture_path).expect("read shared visual text contract fixture"),

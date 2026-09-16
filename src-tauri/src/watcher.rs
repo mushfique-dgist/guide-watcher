@@ -24,7 +24,7 @@ pub fn start(app: AppHandle) {
         let rt = rt_handle;
         let tx_inner = tx_clone;
 
-        if let Err(error) = crate::publication::recover_tree(Path::new(config::WATCH_DIR)) {
+        if let Err(error) = crate::publication::recover_tree(Path::new(&config::watch_dir())) {
             eprintln!("Guide Watcher startup recovery warning: {error}");
         }
 
@@ -42,7 +42,7 @@ pub fn start(app: AppHandle) {
         .expect("Failed to create file watcher");
 
         watcher
-            .watch(Path::new(config::WATCH_DIR), RecursiveMode::Recursive)
+            .watch(Path::new(&config::watch_dir()), RecursiveMode::Recursive)
             .expect("Failed to watch directory");
 
         // Keep the watcher alive (loop prevents drop)

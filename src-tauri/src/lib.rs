@@ -13,6 +13,8 @@ mod history;
 mod job_events;
 mod png_validation;
 mod process_registry;
+mod settings;
+mod setup;
 mod provider_auth;
 mod provider_executable;
 mod publication;
@@ -290,7 +292,7 @@ async fn scan_folder(app: tauri::AppHandle) -> Result<Option<Vec<String>>, Strin
 /// workspace; `scan_folder` remains available for ad hoc locations.
 #[tauri::command]
 fn scan_watch_folder() -> Result<Option<Vec<String>>, String> {
-    configured_scannable_files_in(std::path::Path::new(config::WATCH_DIR))
+    configured_scannable_files_in(std::path::Path::new(&config::watch_dir()))
 }
 
 fn configured_scannable_files_in(path: &std::path::Path) -> Result<Option<Vec<String>>, String> {
@@ -411,6 +413,25 @@ async fn resume_guide(
     options: ResumePrepOptions,
 ) -> Result<String, String> {
     start_provider_resume_job(app, prep_path, options).await
+}
+
+#[tauri::command]
+fn setup_state() -> setup::SetupState {
+    setup::state()
+}
+
+#[tauri::command]
+fn setup_suggestions() -> (String, String) {
+    (setup::suggested_study_folder(), setup::bundled_automation_folder())
+}
+
+#[tauri::command]
+fn save_setup(
+    watch_dir: String,
+    automation_dir: String,
+    subjects: Vec<setup::SubjectDraft>,
+) -> Result<setup::SetupState, String> {
+    setup::save(setup::draft_settings(watch_dir, automation_dir, subjects))
 }
 
 #[tauri::command]
@@ -742,8 +763,8 @@ fn validate_phase(phase: &PhaseSelection, label: &str) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Startup validation
-    if !std::path::Path::new(config::TEMPLATE_FILE).exists() {
-        eprintln!("Template file not found: {}", config::TEMPLATE_FILE);
+    if !std::path::Path::new(&config::template_file()).exists() {
+        eprintln!("Template file not found: {}", &config::template_file());
     }
 
     tauri::Builder::default()
@@ -784,6 +805,9 @@ pub fn run() {
             pick_prep_file,
             resume_guide,
             cancel_all_jobs,
+            setup_state,
+            setup_suggestions,
+            save_setup,
             list_job_history,
             archive_history_job,
             clear_recent_history,
@@ -807,7 +831,7 @@ pub fn run() {
                 let history_app = app.handle().clone();
                 tauri::async_runtime::spawn_blocking(move || {
                     if let Err(error) =
-                        store.import_existing(std::path::Path::new(config::WATCH_DIR))
+                        store.import_existing(std::path::Path::new(&config::watch_dir()))
                     {
                         use tauri::Emitter;
                         let _ = history_app.emit("history-error", error);
@@ -888,7 +912,7 @@ fn validate_startup(app: &tauri::AppHandle) {
     use tauri_plugin_dialog::DialogExt;
 
     for (path, label) in required_startup_paths() {
-        if !std::path::Path::new(path).exists() {
+        if !std::path::Path::new(&path).exists() {
             app.dialog()
                 .message(format!(
                     "{}: {}\n\nThe app cannot start without this.",
@@ -901,10 +925,10 @@ fn validate_startup(app: &tauri::AppHandle) {
     }
 }
 
-fn required_startup_paths() -> [(&'static str, &'static str); 2] {
+fn required_startup_paths() -> [(String, &'static str); 2] {
     [
-        (config::TEMPLATE_FILE, "Template file not found"),
-        (config::WATCH_DIR, "Watch directory not found"),
+        (config::template_file(), "Template file not found"),
+        (config::watch_dir(), "Watch directory not found"),
     ]
 }
 
@@ -1065,8 +1089,8 @@ mod tests {
         let checks = required_startup_paths();
         assert!(checks
             .iter()
-            .any(|(path, _)| *path == config::TEMPLATE_FILE));
-        assert!(checks.iter().any(|(path, _)| *path == config::WATCH_DIR));
+            .any(|(path, _)| path == &config::template_file()));
+        assert!(checks.iter().any(|(path, _)| path == &config::watch_dir()));
     }
 
     #[test]

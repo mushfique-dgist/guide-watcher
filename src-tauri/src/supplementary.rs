@@ -315,7 +315,7 @@ async fn run_collector(
     args: &[OsString],
     cancellation: process_registry::CancellationToken,
 ) -> Result<serde_json::Value, String> {
-    let script = PathBuf::from(config::SUPPLEMENTARY_COLLECT_SCRIPT);
+    let script = PathBuf::from(&config::supplementary_collect_script());
     if !script.is_file() {
         return Err(format!(
             "the collector script is missing: {}",
