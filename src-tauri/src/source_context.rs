@@ -3289,7 +3289,7 @@ fn capture_plain_file(
 /// The folders this installation was pointed at, plus the app's own workspace area. Symlinks
 /// above these belong to the operating system: `/var` is a symlink on every Mac, and the system
 /// temporary folder lives under it.
-fn trusted_roots() -> Vec<PathBuf> {
+pub(crate) fn trusted_roots() -> Vec<PathBuf> {
     let settings = crate::config::settings();
     [
         settings.watch_dir.clone(),
@@ -3303,7 +3303,7 @@ fn trusted_roots() -> Vec<PathBuf> {
 }
 
 /// Whether this ancestor sits above one of those roots, and so is the system's rather than ours.
-fn is_above_trusted_root(candidate: &Path, roots: &[PathBuf]) -> bool {
+pub(crate) fn is_above_trusted_root(candidate: &Path, roots: &[PathBuf]) -> bool {
     roots
         .iter()
         .any(|root| root.starts_with(candidate) && root != candidate)
@@ -5238,6 +5238,10 @@ mod tests {
             "videos": [{
                 "language": "English", "title": "Week 2 lab briefing",
                 "duration_seconds": 20.0, "source_label": "LMS Week 2 announcement",
+                "transcript": [{
+                    "id": "segment-1", "start_seconds": 0.0, "end_seconds": 20.0,
+                    "text": "Set the meter to DC volts before connecting the probes."
+                }],
                 "frames": [{
                     "path": relative, "timestamp_seconds": 5,
                     "sha256": file_sha256(frame).unwrap(),

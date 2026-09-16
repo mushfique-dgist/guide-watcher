@@ -4136,8 +4136,12 @@ fn ensure_plain_path_chain(
         .ancestors()
         .filter(|ancestor| !ancestor.as_os_str().is_empty())
         .collect::<Vec<_>>();
+    let roots = crate::source_context::trusted_roots();
     for (index, component_path) in ancestors.iter().rev().enumerate() {
         let is_leaf = index + 1 == ancestors.len();
+        if !is_leaf && crate::source_context::is_above_trusted_root(component_path, &roots) {
+            continue;
+        }
         let metadata = std::fs::symlink_metadata(component_path).map_err(|error| {
             format!(
                 "{label} path component is missing or unreadable ({}): {error}",
