@@ -46,6 +46,9 @@ struct SearchEnvironment {
     user_profile: Option<PathBuf>,
     local_app_data: Option<PathBuf>,
     roaming_app_data: Option<PathBuf>,
+    /// The Unix home directory. A desktop launch on macOS or Linux inherits a minimal PATH, so
+    /// the usual install locations have to be searched explicitly.
+    home: Option<PathBuf>,
 }
 
 impl SearchEnvironment {
@@ -56,6 +59,7 @@ impl SearchEnvironment {
             user_profile: nonempty_environment("USERPROFILE").map(PathBuf::from),
             local_app_data: nonempty_environment("LOCALAPPDATA").map(PathBuf::from),
             roaming_app_data: nonempty_environment("APPDATA").map(PathBuf::from),
+            home: nonempty_environment("HOME").map(PathBuf::from),
         }
     }
 }
@@ -136,11 +140,49 @@ fn normalized_candidate_identity(path: &Path) -> String {
     identity
 }
 
+/// Where these CLIs install on macOS and Linux. Empty on Windows.
+fn unix_candidates(
+    provider: ProviderExecutable,
+    environment: &SearchEnvironment,
+) -> Vec<PathBuf> {
+    if cfg!(windows) {
+        return Vec::new();
+    }
+    let name = provider.executable_name();
+    let mut candidates = Vec::new();
+    if let Some(home) = &environment.home {
+        for relative in [".local/bin", ".bun/bin", ".npm-global/bin", ".volta/bin"] {
+            candidates.push(home.join(relative).join(name));
+        }
+        if provider.override_name().contains("CODEX") {
+            candidates.push(
+                home.join(".codex")
+                    .join("packages")
+                    .join("standalone")
+                    .join("current")
+                    .join("bin")
+                    .join(name),
+            );
+        }
+    }
+    for absolute in [
+        "/opt/homebrew/bin", // Homebrew on Apple silicon, absent from a Finder launch's PATH
+        "/usr/local/bin",
+        "/usr/bin",
+        "/snap/bin",
+        "/var/lib/flatpak/exports/bin",
+    ] {
+        candidates.push(PathBuf::from(absolute).join(name));
+    }
+    candidates
+}
+
 fn standard_candidates(
     provider: ProviderExecutable,
     environment: &SearchEnvironment,
 ) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
+    candidates.extend(unix_candidates(provider, environment));
     match provider {
         ProviderExecutable::Codex => {
             if let Some(user) = &environment.user_profile {
