@@ -4454,7 +4454,7 @@ mod tests {
                 lecture_primary_rule: crate::course_plan::LecturePrimaryRule::Any,
                 expected_guide_kind: crate::course_plan::GuideKind::CircuitLab,
                 profile_order: 0,
-                pinned_baseline: None,
+                pinned_guides: Vec::new(),
             },
             sequence_key: "week 1".to_string(),
             generation_identity: "circuit-lab:week:1".to_string(),
@@ -4507,7 +4507,7 @@ mod tests {
                     crate::course_plan::GuideKind::Lecture
                 },
                 profile_order: 0,
-                pinned_baseline: None,
+                pinned_guides: Vec::new(),
             },
             sequence_key: "3".to_string(),
             generation_identity: "automatic-visual:3".to_string(),

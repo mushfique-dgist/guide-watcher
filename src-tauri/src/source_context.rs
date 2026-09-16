@@ -6276,7 +6276,7 @@ mod tests {
                 lecture_primary_rule: LecturePrimaryRule::Any,
                 expected_guide_kind: GuideKind::Lecture,
                 profile_order: 0,
-                pinned_baseline: None,
+                pinned_guides: Vec::new(),
             },
             sequence_key: "week 2 lecture".to_string(),
             generation_identity: "test-course:lecture:week 2 lecture".to_string(),
@@ -6326,7 +6326,7 @@ mod tests {
                 lecture_primary_rule: LecturePrimaryRule::Any,
                 expected_guide_kind: GuideKind::Lecture,
                 profile_order: 0,
-                pinned_baseline: None,
+                pinned_guides: Vec::new(),
             },
             sequence_key: "lecture".to_string(),
             generation_identity: "test-course:lecture:lecture".to_string(),
@@ -6378,7 +6378,7 @@ mod tests {
                 lecture_primary_rule: LecturePrimaryRule::Any,
                 expected_guide_kind: GuideKind::Lecture,
                 profile_order: 0,
-                pinned_baseline: None,
+                pinned_guides: Vec::new(),
             },
             sequence_key: "lecture".to_string(),
             generation_identity: "test-course:lecture:lecture".to_string(),
@@ -6445,7 +6445,7 @@ mod tests {
                 lecture_primary_rule: LecturePrimaryRule::Any,
                 expected_guide_kind: GuideKind::Lecture,
                 profile_order: 0,
-                pinned_baseline: None,
+                pinned_guides: Vec::new(),
             },
             sequence_key: "lecture 2".to_string(),
             generation_identity: "test-course:lecture:lecture 2".to_string(),
@@ -6567,7 +6567,7 @@ mod tests {
                 lecture_primary_rule: LecturePrimaryRule::Any,
                 expected_guide_kind: GuideKind::Lecture,
                 profile_order: 0,
-                pinned_baseline: None,
+                pinned_guides: Vec::new(),
             },
             sequence_key: "lecture 2".to_string(),
             generation_identity: "test-course:lecture:lecture 2".to_string(),
@@ -6586,37 +6586,56 @@ mod tests {
     }
 
     #[test]
-    fn configured_circuit_baselines_pass_preflight_as_week_three_history() {
-        let course = crate::course_plan::configured_course("circuit-lab").unwrap();
-        let baselines = crate::course_plan::preserved_baselines(&course);
-        assert_eq!(baselines.len(), 2);
-        let predecessors = baselines
-            .into_iter()
-            .map(|baseline| PlannedPredecessor {
-                course_profile: course.id.clone(),
-                generation_identity: format!(
-                    "{}:{}:{}",
-                    course.id,
-                    course.expected_guide_kind.as_str(),
-                    baseline.sequence_key
-                ),
-                sequence_key: baseline.sequence_key,
-                path: baseline.path,
+    fn pinned_guides_from_earlier_weeks_survive_preflight_as_history() {
+        // Built here rather than read from this installation, so the test means the same thing
+        // on any machine.
+        let root = scratch_dir();
+        let lab = root.join("Circuit Lab");
+        std::fs::create_dir_all(&lab).unwrap();
+        let mut predecessors = Vec::new();
+        let mut pinned_guides = Vec::new();
+        for (week, name) in [(1, "Week 01 Guide.md"), (2, "Week 02 Guide.md")] {
+            let path = lab.join(name);
+            std::fs::write(&path, format!("week {week}, already written")).unwrap();
+            // The subject pins the guide, and preflight checks the file still matches.
+            pinned_guides.push(crate::course_plan::PinnedBaseline {
+                path: path.clone(),
+                sha256: crate::course_plan::sha256_file(&path).unwrap(),
+                sequence_key: format!("week-{week:02}"),
+            });
+            predecessors.push(PlannedPredecessor {
+                course_profile: "circuit-lab".to_string(),
+                generation_identity: format!("circuit-lab:circuit-lab:week-{week:02}"),
+                sequence_key: format!("week-{week:02}"),
+                path,
                 pinned: true,
-            })
-            .collect();
+            });
+        }
+        let course = ResolvedCourse {
+            id: "circuit-lab".to_string(),
+            label: "Circuit Lab".to_string(),
+            root: lab.clone(),
+            guide_mode: GuideMode::WeeklyLab,
+            lecture_primary_rule: LecturePrimaryRule::Any,
+            expected_guide_kind: GuideKind::CircuitLab,
+            profile_order: 0,
+            pinned_guides,
+        };
+        let source = lab.join("Week 3 future source.pdf");
         let plan = PlannedGuide {
             job_id: "circuit-week-three-preflight".to_string(),
-            source_paths: vec![course.root.join("Week 3 future source.pdf")],
-            primary_source: course.root.join("Week 3 future source.pdf"),
-            output_path: course.root.join("Circuit_Lab_Week_03_Guide.md"),
+            source_paths: vec![source.clone()],
+            primary_source: source,
+            output_path: lab.join("Circuit_Lab_Week_03_Guide.md"),
             course,
             sequence_key: "week-03".to_string(),
             generation_identity: "circuit-lab:circuit-lab:week-03".to_string(),
             predecessors,
         };
 
+        // A pinned guide from an earlier week is valid history, not a missing dependency.
         preflight_predecessors(&plan, &HashSet::new()).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -7139,7 +7158,7 @@ mod tests {
                 lecture_primary_rule: LecturePrimaryRule::Any,
                 expected_guide_kind: GuideKind::Lecture,
                 profile_order: 0,
-                pinned_baseline: None,
+                pinned_guides: Vec::new(),
             },
             sequence_key: "lecture".to_string(),
             generation_identity: "test-course:lecture:cancel".to_string(),

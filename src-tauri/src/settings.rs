@@ -13,6 +13,17 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 
+/// A guide that must be preserved rather than regenerated: an existing week's work that the app
+/// keeps and builds on. The checksum is what proves the file is still the one that was pinned.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PinnedGuide {
+    /// Absolute, or relative to the subject's folder.
+    pub file: String,
+    pub sha256: String,
+    /// Where this guide sits in the subject's order, such as "week-01".
+    pub sequence_key: String,
+}
+
 /// One subject to watch.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CourseSetting {
@@ -32,6 +43,9 @@ pub struct CourseSetting {
     /// "lecture" (the default), "circuit-lab", "scientific-writing-week", "course-week".
     #[serde(default)]
     pub kind: String,
+    /// Guides already written that must be kept rather than regenerated.
+    #[serde(default)]
+    pub pinned_guides: Vec<PinnedGuide>,
 }
 
 /// Tools that only some features need. An empty path simply means that feature is unavailable,
@@ -130,6 +144,15 @@ impl Settings {
             PathBuf::from(folder)
         } else {
             Path::new(&self.watch_dir).join(folder)
+        }
+    }
+
+    /// Where a pinned guide lives: absolute as given, or inside the subject's folder.
+    pub fn pinned_guide_path(&self, course: &CourseSetting, pinned: &PinnedGuide) -> PathBuf {
+        if is_absolute(&pinned.file) {
+            PathBuf::from(&pinned.file)
+        } else {
+            self.course_root(course).join(&pinned.file)
         }
     }
 

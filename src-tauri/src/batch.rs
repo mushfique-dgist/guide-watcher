@@ -939,7 +939,7 @@ mod tests {
                 lecture_primary_rule: LecturePrimaryRule::Any,
                 expected_guide_kind: GuideKind::Lecture,
                 profile_order: 0,
-                pinned_baseline: None,
+                pinned_guides: Vec::new(),
             },
             sequence_key: sequence.to_string(),
             generation_identity: format!("{course}:{sequence}"),
@@ -956,7 +956,7 @@ mod tests {
             lecture_primary_rule: LecturePrimaryRule::Any,
             expected_guide_kind: GuideKind::Lecture,
             profile_order: 0,
-            pinned_baseline: None,
+            pinned_guides: Vec::new(),
         }
     }
 

@@ -7,31 +7,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use uuid::Uuid;
 
-// Guides that must be preserved rather than regenerated, named relative to the configured
-// course root so the source carries no one machine's directory layout.
-const SCIENTIFIC_WRITING_WEEK_ONE_RELATIVE: &str =
-    "Scientific Writing/Week 1 Complete Study and Group Discussion Guide.md";
-fn scientific_writing_week_one() -> PathBuf {
-    Path::new(&config::watch_dir()).join(SCIENTIFIC_WRITING_WEEK_ONE_RELATIVE)
-}
-const SCIENTIFIC_WRITING_WEEK_ONE_SHA256: &str =
-    "35695b54e256d19d49eb154cb308b1e725a33c60f92e7987238d7d93900c31d3";
-const CIRCUIT_LAB_RELATIVE: &str = "Circuit Theory & Measurement Lab";
-fn circuit_lab_root() -> PathBuf {
-    Path::new(&config::watch_dir()).join(CIRCUIT_LAB_RELATIVE)
-}
-const CIRCUIT_LAB_WEEK_ONE_RELATIVE: &str = "Circuit_Lab_Week_01_Orientation_and_Measurement_Setup_Guide.md";
-fn circuit_lab_week_one() -> PathBuf {
-    circuit_lab_root().join(CIRCUIT_LAB_WEEK_ONE_RELATIVE)
-}
-const CIRCUIT_LAB_WEEK_ONE_SHA256: &str =
-    "8635d62cff46c9d48c63a8057b8cb14d886f785dfa6e865247c7a775ed4f6007";
-const CIRCUIT_LAB_WEEK_TWO_RELATIVE: &str = "Circuit_Lab_Week_02_Ohms_Law_and_Kirchhoffs_Laws_Guide.md";
-fn circuit_lab_week_two() -> PathBuf {
-    circuit_lab_root().join(CIRCUIT_LAB_WEEK_TWO_RELATIVE)
-}
-const CIRCUIT_LAB_WEEK_TWO_SHA256: &str =
-    "c7553d4cbb6301703c3701d4ae85a4702572cdac1ec9d6e9a1742c25043c457b";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -87,7 +62,8 @@ pub struct ResolvedCourse {
     pub lecture_primary_rule: LecturePrimaryRule,
     pub expected_guide_kind: GuideKind,
     pub profile_order: u8,
-    pub pinned_baseline: Option<PinnedBaseline>,
+    /// Guides this subject keeps rather than regenerates, in sequence order.
+    pub pinned_guides: Vec<PinnedBaseline>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -196,25 +172,25 @@ pub fn configured_courses() -> Result<Vec<ResolvedCourse>, String> {
             } else {
                 LecturePrimaryRule::Named(course.lecture_files.clone())
             },
-            0u8,
+            course
+                .pinned_guides
+                .iter()
+                .map(|pinned| PinnedBaseline {
+                    path: configured.pinned_guide_path(course, pinned),
+                    sha256: pinned.sha256.clone(),
+                    sequence_key: pinned.sequence_key.clone(),
+                })
+                .collect::<Vec<_>>(),
         )
     });
 
     specifications
         .enumerate()
         .map(
-            |(order, (id, label, root, mode, kind, lecture_primary_rule, _))| {
+            |(order, (id, label, root, mode, kind, lecture_primary_rule, pinned))| {
                 let order = order as u8;
                 let root = canonical_directory(Path::new(&root), "course root")?;
-                let pinned_baseline = if id == "scientific-writing" {
-                    Some(PinnedBaseline {
-                        path: scientific_writing_week_one(),
-                        sha256: SCIENTIFIC_WRITING_WEEK_ONE_SHA256.to_string(),
-                        sequence_key: "week-01".to_string(),
-                    })
-                } else {
-                    None
-                };
+                let pinned_guides = pinned;
                 Ok(ResolvedCourse {
                     id: id.clone(),
                     label: label.clone(),
@@ -223,38 +199,16 @@ pub fn configured_courses() -> Result<Vec<ResolvedCourse>, String> {
                     lecture_primary_rule,
                     expected_guide_kind: kind,
                     profile_order: order,
-                    pinned_baseline,
+                    pinned_guides,
                 })
             },
         )
         .collect()
 }
 
+/// Every guide this subject keeps rather than regenerates, as configured for this installation.
 pub(crate) fn preserved_baselines(course: &ResolvedCourse) -> Vec<PinnedBaseline> {
-    let mut baselines = course
-        .pinned_baseline
-        .clone()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let is_configured_circuit_lab = course.id == "circuit-lab"
-        && canonical_directory(&circuit_lab_root(), "Circuit Lab root")
-            .ok()
-            .is_some_and(|root| same_path(&course.root, &root));
-    if is_configured_circuit_lab {
-        baselines.extend([
-            PinnedBaseline {
-                path: circuit_lab_week_one(),
-                sha256: CIRCUIT_LAB_WEEK_ONE_SHA256.to_string(),
-                sequence_key: "week-01".to_string(),
-            },
-            PinnedBaseline {
-                path: circuit_lab_week_two(),
-                sha256: CIRCUIT_LAB_WEEK_TWO_SHA256.to_string(),
-                sequence_key: "week-02".to_string(),
-            },
-        ]);
-    }
-    baselines
+    course.pinned_guides.clone()
 }
 
 fn is_preserved_week(course: &ResolvedCourse, week: u32) -> bool {
@@ -1193,7 +1147,7 @@ mod tests {
             lecture_primary_rule: LecturePrimaryRule::Any,
             expected_guide_kind: kind,
             profile_order: order,
-            pinned_baseline: None,
+            pinned_guides: Vec::new(),
         }
     }
 
@@ -1378,11 +1332,11 @@ mod tests {
             GuideKind::ScientificWritingWeek,
             4,
         );
-        sw_course.pinned_baseline = Some(PinnedBaseline {
+        sw_course.pinned_guides = vec![PinnedBaseline {
             path: baseline.clone(),
             sha256: sha256_file(&baseline).unwrap(),
             sequence_key: "week-01".to_string(),
-        });
+        }];
 
         let planned = plan_guides_with_courses(&[week2], "auto", &[sw_course]).unwrap();
         assert_eq!(
@@ -1396,14 +1350,38 @@ mod tests {
     }
 
     #[test]
-    fn configured_circuit_guides_are_pinned_as_week_one_and_two_baselines() {
-        let courses = configured_courses().unwrap();
-        let circuit = courses
-            .iter()
-            .find(|course| course.id == "circuit-lab")
-            .expect("configured Circuit Lab course");
-        let baselines = preserved_baselines(circuit);
+    fn a_pinned_guide_is_preserved_and_never_offered_as_a_new_source() {
+        let root = TestDir::new();
+        let lab = root.0.join("Circuit Lab");
+        std::fs::create_dir_all(&lab).unwrap();
 
+        // Two guides already written, which must be kept rather than regenerated.
+        let week_one = lab.join("Week 01 Guide.md");
+        let week_two = lab.join("Week 02 Guide.md");
+        std::fs::write(&week_one, b"week one, already written").unwrap();
+        std::fs::write(&week_two, b"week two, already written").unwrap();
+
+        let mut lab_course = course(
+            &lab,
+            "circuit-lab",
+            GuideMode::WeeklyLab,
+            GuideKind::CircuitLab,
+            3,
+        );
+        lab_course.pinned_guides = vec![
+            PinnedBaseline {
+                path: week_one.clone(),
+                sha256: sha256_file(&week_one).unwrap(),
+                sequence_key: "week-01".to_string(),
+            },
+            PinnedBaseline {
+                path: week_two.clone(),
+                sha256: sha256_file(&week_two).unwrap(),
+                sequence_key: "week-02".to_string(),
+            },
+        ];
+
+        let baselines = preserved_baselines(&lab_course);
         assert_eq!(
             baselines
                 .iter()
@@ -1411,21 +1389,19 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["week-01", "week-02"]
         );
-        for baseline in baselines {
-            let path = canonical_file(&baseline.path, "configured Circuit Lab baseline").unwrap();
-            assert_eq!(sha256_file(&path).unwrap(), baseline.sha256);
+        // The checksum is what proves a pinned guide is still the file that was pinned.
+        for baseline in &baselines {
+            assert_eq!(sha256_file(&baseline.path).unwrap(), baseline.sha256);
         }
-        let week_one_source = circuit_lab_root()
-            .join("Circuit Lab Week 01 - Orientation and Measurement Setup.html");
-        let week_two_source = circuit_lab_root().join("Ohms_Law.pdf");
-        assert!(!is_scannable_source_with_courses(
-            &week_one_source,
-            &courses
-        ));
-        assert!(!is_scannable_source_with_courses(
-            &week_two_source,
-            &courses
-        ));
+
+        // A pinned guide is not material to make another guide out of.
+        let courses = [lab_course];
+        assert!(!is_scannable_source_with_courses(&week_one, &courses));
+        assert!(!is_scannable_source_with_courses(&week_two, &courses));
+
+        // New material in the same folder still is.
+        let fresh = source(&lab, "Week 03 Lab.pdf");
+        assert!(is_scannable_source_with_courses(&fresh, &courses));
     }
 
     #[test]
@@ -1446,11 +1422,11 @@ mod tests {
             GuideKind::ScientificWritingWeek,
             4,
         );
-        sw_course.pinned_baseline = Some(PinnedBaseline {
+        sw_course.pinned_guides = vec![PinnedBaseline {
             sha256: sha256_file(&baseline).unwrap(),
             path: baseline,
             sequence_key: "week-01".to_string(),
-        });
+        }];
         let courses = [sw_course];
 
         assert!(!is_scannable_source_with_courses(&week1, &courses));
@@ -1704,11 +1680,11 @@ mod tests {
             GuideKind::ScientificWritingWeek,
             4,
         );
-        writing_course.pinned_baseline = Some(PinnedBaseline {
+        writing_course.pinned_guides = vec![PinnedBaseline {
             path: baseline.clone(),
             sha256: sha256_file(&baseline).unwrap(),
             sequence_key: "week-01".to_string(),
-        });
+        }];
         let plan = plan_guides_with_courses(&[selected], "auto", &[writing_course])
             .unwrap()
             .remove(0);

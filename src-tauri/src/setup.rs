@@ -357,6 +357,8 @@ pub fn draft_settings(
             description: String::new(),
             mode: String::new(),
             kind: String::new(),
+            // A new subject pins nothing; existing guides are pinned later, deliberately.
+            pinned_guides: Vec::new(),
         })
         .collect();
     Settings {
