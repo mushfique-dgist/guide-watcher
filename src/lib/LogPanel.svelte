@@ -33,7 +33,7 @@ function summary(job){if(job.summary)return job.summary;if(job.status==='done')r
 <span class="status-badge {job.status}">{statusLabel(job.status)}</span></div>
 {#if isActive(job.status)}<p class="muted">You can close the window. It keeps working and tells you when the guide is ready.</p>{/if}
 {:else}<h2>{isActive(job.status)?'Working on your guide':statusLabel(job.status)}</h2>{/if}
-<p class="outcome">{summary(job)}</p>
+{#if $powerMode||!isActive(job.status)}<p class="outcome">{summary(job)}</p>{/if}
 {#if job.nextStep && !isActive(job.status)}<p class="next-step"><strong>What to do next:</strong> {job.nextStep}</p>{/if}
 {#if job.recoveryNote}<p class="recovery-note">{job.recoveryNote}</p>{/if}
 <div class="actions">{#if job.canOpenOutput}<button class="button primary" disabled={!!action} onclick={()=>perform('open')}>Open guide</button>{/if}{#if job.canResume}<button class="button primary" disabled={!!action} onclick={()=>confirmAction='resume'}>Resume writing</button>{/if}{#if job.canRetry}<button class="button secondary" disabled={!!action} onclick={()=>confirmAction='retry'}>Retry from sources</button>{/if}{#if isActive(job.status) && job.canCancel!==false}<button class="button secondary" disabled={!!action} onclick={()=>confirmAction='cancel'}>{job.cancellationScope==='batch'?'Stop this batch':'Stop this run'}</button>{/if}</div>
@@ -50,7 +50,7 @@ function summary(job){if(job.summary)return job.summary;if(job.status==='done')r
 {:else}<section class="page"><div class="page-inner"><h1>Choose a guide</h1><p class="muted">Select a recent run or open History to see its outcome.</p><button class="button secondary" onclick={()=>{$currentView='history';}}>Open history</button></div></section>{/if}
 <style>
 .steps{list-style:none;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.6rem;padding:0;margin:0;}
-.steps li{display:grid;gap:.4rem;}
+.steps li{display:grid;grid-template-columns:1fr;gap:.4rem;padding:0;border-bottom:0;}
 .step-bar{height:4px;border-radius:2px;background:var(--border-panel);overflow:hidden;}
 .step-bar i{display:block;height:100%;width:0;background:var(--fill-work);border-radius:2px;}
 .steps li.done .step-bar i{width:100%;background:var(--fill-done);}
