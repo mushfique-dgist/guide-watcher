@@ -1787,7 +1787,35 @@ fn move_no_replace(source: &Path, target: &Path) -> Result<(), String> {
     }
 }
 
-#[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
+/// macOS spells the same guarantee `renamex_np` with `RENAME_EXCL`: rename, but fail rather than
+/// replace anything already at the target. Available since 10.12.
+#[cfg(target_os = "macos")]
+fn move_no_replace(source: &Path, target: &Path) -> Result<(), String> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    extern "C" {
+        fn renamex_np(from: *const i8, to: *const i8, flags: u32) -> i32;
+    }
+    const RENAME_EXCL: u32 = 0x0000_0004;
+    let source = CString::new(source.as_os_str().as_bytes())
+        .map_err(|_| "source path contains NUL".to_string())?;
+    let target = CString::new(target.as_os_str().as_bytes())
+        .map_err(|_| "target path contains NUL".to_string())?;
+    let result = unsafe { renamex_np(source.as_ptr(), target.as_ptr(), RENAME_EXCL) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(format!(
+            "no-replace rename failed: {}",
+            std::io::Error::last_os_error()
+        ))
+    }
+}
+
+#[cfg(all(
+    unix,
+    not(any(target_os = "linux", target_os = "android", target_os = "macos"))
+))]
 fn move_no_replace(_source: &Path, _target: &Path) -> Result<(), String> {
     Err("no safe directory no-replace primitive is implemented for this Unix target".to_string())
 }

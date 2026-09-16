@@ -5220,6 +5220,13 @@ mod tests {
                     "procedure_step_ids": ["configure-meter"]
                 }]
             }],
+            // A frame belongs to a step of the procedure; validation requires that inventory,
+            // and without it this test never reached the symlink rejection it exists to prove.
+            "procedure_steps": [{
+                "id": "configure-meter",
+                "action": "Set the meter to DC volts before connecting the probes.",
+                "transcript_segment_ids": []
+            }],
             "conflicts": [], "gaps": []
         })
     }

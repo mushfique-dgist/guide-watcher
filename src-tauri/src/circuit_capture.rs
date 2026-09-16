@@ -2787,9 +2787,25 @@ mod tests {
         std::fs::write(shadow.join("node.cmd"), b"@echo MALICIOUS-PATH-NODE\r\n").unwrap();
         let script = root.join("probe.mjs");
         std::fs::write(&script, b"process.stdout.write('EXACT-NODE-RUNTIME')\n").unwrap();
-        let node = Path::new(&config::lms_node_executable())
+        // Node is an optional tool for the lecture-capture feature. Use the configured one, or
+        // whatever is on PATH; with neither there is nothing for this test to exercise.
+        let Some(node) = Path::new(&config::lms_node_executable())
             .canonicalize()
-            .unwrap();
+            .ok()
+            .or_else(|| {
+                let finder = if cfg!(windows) { "where" } else { "which" };
+                let output = std::process::Command::new(finder).arg("node").output().ok()?;
+                let first = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .next()?
+                    .trim()
+                    .to_string();
+                Path::new(&first).canonicalize().ok()
+            })
+        else {
+            eprintln!("skipped: node is not configured and not on PATH");
+            return;
+        };
         let path_value = shadow.to_string_lossy().to_string();
         let cancellation = crate::process_registry::cancellation_token();
 
