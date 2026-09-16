@@ -44,6 +44,9 @@ export function draftProblems(draft) {
     const key = subject.label.toLowerCase();
     if (seen.has(key)) problems.push(`Two subjects are both called “${subject.label}”.`);
     seen.add(key);
+    // A pattern that does not compile would be saved and then quietly match everything.
+    const pattern = lectureFilesProblem(subject.lectureFiles);
+    if (pattern) problems.push(`${subject.label}: ${pattern}`);
   }
   return problems;
 }

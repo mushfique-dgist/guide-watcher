@@ -32,6 +32,9 @@ test('the wizard says what is still missing before anything is sent', () => {
   // Two subjects with one name would write two settings entries with the same derived id.
   const clashing = { ...complete, subjects: [{ label: 'Photography' }, { label: 'photography' }] };
   assert.deepEqual(draftProblems(clashing), ['Two subjects are both called “photography”.']);
+  // The file rule fails open by design, so an unusable pattern would take in every file.
+  const broken = { ...complete, subjects: [{ label: 'Photography', lectureFiles: '^lesson[' }] };
+  assert.match(draftProblems(broken)[0], /^Photography: That file-name pattern is not valid/);
 });
 
 test('only the checks that really block are put in front of the person', () => {

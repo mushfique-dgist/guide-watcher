@@ -129,6 +129,17 @@ impl Settings {
                     self.course_root(course).display()
                 ));
             }
+            // A pattern that does not compile matches nothing the app can reason about, and the
+            // file rule deliberately fails open, so it would quietly take in every file instead.
+            let pattern = course.lecture_files.trim();
+            if !pattern.is_empty() {
+                if let Err(error) = regex::Regex::new(&format!("(?i){pattern}")) {
+                    problems.push(format!(
+                        "The file-name pattern for {} is not a valid expression: {error}",
+                        course.label
+                    ));
+                }
+            }
         }
         problems
     }
@@ -325,6 +336,14 @@ mod tests {
         assert!(settings.problems()[0].contains("Photography"), "{:?}", settings.problems());
 
         settings.courses[0].folder = "Photography".into();
+        // A pattern that cannot compile is refused here, because the rule that uses it fails
+        // open: saved, it would quietly start a guide from every file in the folder.
+        settings.courses[0].lecture_files = "^lesson[".into();
+        let problems = settings.problems();
+        assert!(problems[0].contains("not a valid expression"), "{problems:?}");
+        settings.courses[0].lecture_files = "^lesson[0-9]+".into();
+        assert!(settings.is_configured(), "{:?}", settings.problems());
+
         std::fs::remove_file(automation.join("guide_lint.py")).unwrap();
         assert!(settings.problems()[0].contains("the checker"), "{:?}", settings.problems());
         std::fs::remove_dir_all(root).unwrap();

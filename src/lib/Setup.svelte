@@ -188,7 +188,7 @@
               </details>
             </div>
           {/each}
-          <button class="button ghost" onclick={addSubject}>+ Add another subject</button>
+          <button class="button ghost add-subject" onclick={addSubject}>+ Add another subject</button>
         </section>
 
         {#if saved && !problems.length}<p class="saved" role="status">Saved. These settings apply to the next guide you start.</p>{/if}
@@ -230,7 +230,7 @@ header h1{font-size:1.6rem;}
 header p,.muted{color:var(--text-secondary);line-height:1.55;}
 .muted{font-size:.9rem;}
 .doors{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;}
-.door{display:grid;gap:.5rem;align-content:start;text-align:left;padding:1.25rem;border:1px solid var(--border-panel);border-radius:var(--radius);background:var(--bg-panel);min-height:11rem;}
+.door{display:flex;flex-direction:column;gap:.5rem;text-align:left;padding:1.25rem;border:1px solid var(--border-panel);border-radius:var(--radius);background:var(--bg-panel);min-height:11rem;}
 .door:hover:not(:disabled){border-color:var(--brand);background:var(--bg-active);}
 .door:disabled{opacity:.6;}
 .door h2{font-size:1.05rem;}
@@ -256,7 +256,9 @@ header p,.muted{color:var(--text-secondary);line-height:1.55;}
 .checks .fix{color:var(--accent-blue);}
 .checks-section{border-top:1px solid var(--border-panel);padding-top:1.25rem;}
 .actions{display:flex;gap:.5rem;flex-wrap:wrap;}
-.waiting,.done{display:grid;gap:.75rem;justify-items:start;padding:1.5rem;border:1px solid var(--border-panel);border-radius:var(--radius);background:var(--bg-panel);}
+.add-subject{justify-self:start;}
+.waiting,.done{display:grid;gap:.75rem;justify-items:stretch;padding:1.5rem;border:1px solid var(--border-panel);border-radius:var(--radius);background:var(--bg-panel);}
+.waiting .button,.done .button{justify-self:start;}
 .command-row{display:flex;gap:.5rem;align-items:center;width:100%;}
 .command-row code{flex:1;min-width:0;overflow-wrap:anywhere;font-family:var(--font-mono);font-size:.85rem;background:var(--bg-surface);padding:.5rem .6rem;border-radius:6px;}
 .pulse{display:flex;gap:.4rem;}
