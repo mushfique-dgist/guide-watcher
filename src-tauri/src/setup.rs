@@ -286,6 +286,235 @@ pub fn state() -> SetupState {
     }
 }
 
+/// What the assisted door handed over, so the waiting screen can say something true even when no
+/// terminal could be opened.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantHandoff {
+    /// The written brief the assistant is asked to read.
+    pub brief_path: String,
+    /// True when a terminal window was opened with the assistant already running in it.
+    pub terminal_opened: bool,
+    /// What to run by hand, for the case where no terminal could be opened.
+    pub command: String,
+    pub detail: String,
+}
+
+/// Everything an assistant needs to finish this setup without guessing anything about the person
+/// it is setting up for. It is written to disk rather than passed as an argument so that the
+/// person can read exactly what their assistant was asked to do.
+fn assistant_brief(settings_path: &Path, automation_hint: &str, study_hint: &str) -> String {
+    format!(
+        r#"# Set up Guide Watcher on this computer
+
+You are being asked to finish the first-run setup of Guide Watcher, a desktop app that turns
+lecture material into study guides. The app is waiting for you; it re-checks this machine every
+few seconds and will continue on its own the moment the setup is valid.
+
+## What you must produce
+
+One JSON file, written to exactly this path:
+
+    {settings}
+
+Its shape, with every field the app reads:
+
+```json
+{{
+  "watch_dir": "the folder that holds the subject folders",
+  "automation_dir": "the _automation folder that came with Guide Watcher",
+  "archive_dir": "an older folder of finished guides, or an empty string",
+  "courses": [
+    {{
+      "id": "lowercase-kebab-case, stable, derived from the label",
+      "label": "Computer Networks",
+      "folder": "Computer Networks",
+      "lecture_files": "",
+      "description": "",
+      "mode": "",
+      "kind": "",
+      "pinned_guides": []
+    }}
+  ],
+  "tools": {{}}
+}}
+```
+
+- `folder` is either absolute or relative to `watch_dir`.
+- `lecture_files` is an optional case-insensitive regular expression. Leave it empty unless the
+  person says only some files in a folder start a guide (for example `^chapter` or `week[ _-]?\d+`).
+- `mode` is empty for ordinary lecture decks, or one of `weekly-lab`, `weekly-material`.
+- `kind` is empty for ordinary lectures, or one of `circuit-lab`, `scientific-writing-week`,
+  `course-week`.
+- Leave `pinned_guides` empty. Guides that already exist are pinned later, deliberately, from
+  inside the app.
+
+## What you must ask the person
+
+Ask, do not guess, and do not invent folders. Ask in one message, and wait for the answers:
+
+1. Which folder holds their course material. A reasonable guess to offer is `{study_hint}`,
+   but it is their answer that counts.
+2. Which subjects they want guides for, and the folder name for each. Create the folders if the
+   person wants them created; never create folders they did not ask for.
+3. Whether any subject only starts a guide from particular file names.
+
+If anything they tell you does not exist on this machine, say so plainly and ask again rather
+than writing a path that will fail later.
+
+## What you must check before you finish
+
+- `claude` is installed and signed in (`claude` runs and does not ask for a login).
+- `codex` is installed and signed in (`codex login` has been completed).
+- Python 3 runs, and `pymupdf`, `markdown-it-py` and `requests` import. Install whatever is
+  missing with the person's agreement: `pip install pymupdf markdown-it-py requests`.
+- The automation folder really holds `guide_prompt.txt`, `guide_depth_contract.md`,
+  `guide_lint.py` and `requirements-verifier.txt`.{automation}
+
+Anything you cannot fix yourself, tell the person exactly what to do, in one short list.
+
+## When you are done
+
+Write the file, then say so. The app is watching that path and will move on by itself. Do not
+start any guide, and do not change anything else on this machine.
+"#,
+        settings = settings_path.display(),
+        study_hint = study_hint,
+        automation = if automation_hint.is_empty() {
+            String::new()
+        } else {
+            format!("\n- The folder that shipped with this installation is `{automation_hint}`.")
+        }
+    )
+}
+
+/// Open a terminal running the assistant, so it can ask its questions where the person can answer.
+/// Every platform gets a small script rather than a long quoted command line, because a path with
+/// a space in it is the normal case rather than the exception.
+fn open_terminal_with(script: &Path, working_dir: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "Guide Watcher setup", "cmd", "/K"])
+            .arg(script)
+            .current_dir(working_dir)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("Could not open a terminal: {error}"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-a")
+            .arg("Terminal")
+            .arg(script)
+            .current_dir(working_dir)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| format!("Could not open Terminal: {error}"))
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // No single terminal is present on every Linux desktop, so try the usual ones in turn.
+        let terminals: [(&str, &[&str]); 7] = [
+            ("x-terminal-emulator", &["-e"]),
+            ("gnome-terminal", &["--"]),
+            ("konsole", &["-e"]),
+            ("xfce4-terminal", &["-e"]),
+            ("kitty", &[]),
+            ("alacritty", &["-e"]),
+            ("xterm", &["-e"]),
+        ];
+        for (terminal, arguments) in terminals {
+            if !command_exists(terminal) {
+                continue;
+            }
+            if std::process::Command::new(terminal)
+                .args(arguments)
+                .arg(script)
+                .current_dir(working_dir)
+                .spawn()
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
+        Err("No terminal program was found on this system".to_string())
+    }
+}
+
+/// The assisted door. Writes the brief, then hands it to the assistant in a terminal the person
+/// can answer questions in. Failing to open a terminal is not a failure of the setup: the command
+/// comes back so the person can run it themselves.
+pub fn start_assistant() -> Result<AssistantHandoff, String> {
+    let settings_path = settings::settings_path();
+    let folder = settings_path
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| "The settings folder could not be resolved".to_string())?;
+    std::fs::create_dir_all(&folder)
+        .map_err(|error| format!("Could not create {}: {error}", folder.display()))?;
+
+    let brief_path = folder.join("guide-watcher-setup-brief.md");
+    let brief = assistant_brief(
+        &settings_path,
+        &bundled_automation_folder(),
+        &suggested_study_folder(),
+    );
+    std::fs::write(&brief_path, brief)
+        .map_err(|error| format!("Could not write the brief: {error}"))?;
+
+    let assistant = resolve_provider_executable(ProviderExecutable::Claude)
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "claude".to_string());
+    let instruction = format!(
+        "Read {} and follow it exactly.",
+        brief_path.file_name().unwrap_or_default().to_string_lossy()
+    );
+    let command = format!("{assistant} \"{instruction}\"");
+
+    let script_path = folder.join(if cfg!(windows) {
+        "guide-watcher-setup.cmd"
+    } else if cfg!(target_os = "macos") {
+        "guide-watcher-setup.command"
+    } else {
+        "guide-watcher-setup.sh"
+    });
+    let script = if cfg!(windows) {
+        format!(
+            "@echo off\r\ntitle Guide Watcher setup\r\ncd /d \"{}\"\r\n{command}\r\n",
+            folder.display()
+        )
+    } else {
+        format!(
+            "#!/bin/sh\ncd \"{}\" || exit 1\n{command}\n",
+            folder.display()
+        )
+    };
+    std::fs::write(&script_path, script)
+        .map_err(|error| format!("Could not write the setup script: {error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755));
+    }
+
+    let (terminal_opened, detail) = match open_terminal_with(&script_path, &folder) {
+        Ok(()) => (
+            true,
+            "A terminal is open with your assistant in it. Answer its questions there."
+                .to_string(),
+        ),
+        Err(error) => (false, error),
+    };
+    Ok(AssistantHandoff {
+        brief_path: brief_path.to_string_lossy().into_owned(),
+        terminal_opened,
+        command,
+        detail,
+    })
+}
+
 /// Save what the wizard collected, refusing anything that would not actually work.
 pub fn save(settings: Settings) -> Result<SetupState, String> {
     let problems = settings.problems();
@@ -426,6 +655,35 @@ mod tests {
         };
         let error = save(broken).unwrap_err();
         assert!(error.contains("does not exist") || error.contains("study folder"), "{error}");
+    }
+
+    #[test]
+    fn the_assistant_is_told_where_to_write_and_to_ask_rather_than_guess() {
+        let brief = assistant_brief(
+            Path::new("/home/someone/.config/guide-watcher/settings.json"),
+            "/opt/guide-watcher/_automation",
+            "/home/someone/Documents",
+        );
+        // Without the exact path, an assistant writes a perfectly good file nobody reads.
+        assert!(
+            brief.contains("/home/someone/.config/guide-watcher/settings.json"),
+            "{brief}"
+        );
+        assert!(brief.contains("/opt/guide-watcher/_automation"), "{brief}");
+        assert!(brief.contains("/home/someone/Documents"), "{brief}");
+        assert!(brief.contains("Ask, do not guess"), "{brief}");
+        // Every field the app reads must be described, or the assistant invents its own shape.
+        for field in [
+            "watch_dir",
+            "automation_dir",
+            "archive_dir",
+            "courses",
+            "lecture_files",
+            "pinned_guides",
+            "tools",
+        ] {
+            assert!(brief.contains(field), "the brief never mentions {field}");
+        }
     }
 
     #[test]

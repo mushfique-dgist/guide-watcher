@@ -19,6 +19,8 @@ const MAIN_WINDOW: &str = "main";
 /// Matches the id the tray is built with in `lib.rs`.
 const TRAY_ID: &str = "main-tray";
 /// Side of the square badge. Windows asks for a 16px overlay and scales it, so draw it larger.
+/// Only Windows has a taskbar overlay to put it on; elsewhere the count lives on the tray icon.
+#[cfg_attr(not(windows), allow(dead_code))]
 const BADGE_PX: u32 = 32;
 /// Opaque red disc behind the number.
 const BADGE_FILL: [u8; 3] = [211, 47, 47];
@@ -239,6 +241,7 @@ fn badge_font() -> &'static Font {
 }
 
 /// A red disc carrying the count at the taskbar's size, or `None` when there is nothing to show.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn badge_icon(count: usize) -> Option<Image<'static>> {
     badge_image(count, BADGE_PX)
 }

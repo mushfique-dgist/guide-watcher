@@ -3,12 +3,14 @@ name: Release
 # Builds Guide Watcher for Windows, macOS (Apple silicon and Intel) and Linux, and attaches the
 # installers to a GitHub release.
 #
-# Signing is done here when the repository holds the credentials, because only a signed build
-# avoids the warnings browsers and operating systems show for unknown publishers:
+# Signing happens here when the repository holds the credentials, because only a signed build
+# avoids the warnings browsers and operating systems show for an unknown publisher:
 #
 #   Windows   WINDOWS_CERTIFICATE (base64 .pfx) + WINDOWS_CERTIFICATE_PASSWORD
+#             optional WINDOWS_TIMESTAMP_URL, default http://timestamp.digicert.com
 #   macOS     APPLE_CERTIFICATE (base64 .p12) + APPLE_CERTIFICATE_PASSWORD + APPLE_SIGNING_IDENTITY
 #             and, for notarisation, APPLE_ID + APPLE_PASSWORD + APPLE_TEAM_ID
+#   Scanning  VIRUSTOTAL_API_KEY, which uploads every installer and records the report links
 #
 # Without those secrets the build still succeeds and produces working installers; they are simply
 # unsigned, and the release says so. Every artifact gets a build provenance attestation either
@@ -48,6 +50,11 @@ jobs:
             label: Windows
     runs-on: ${{ matrix.platform }}
     name: ${{ matrix.label }}
+    # Read at the job level so a step can ask whether a credential exists before using it.
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      TAURI_SIGNING_PRIVATE_KEY_SECRET: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -117,12 +124,21 @@ jobs:
           npm run test:frontend
           cargo test --manifest-path src-tauri/Cargo.toml --all-targets
 
+      # Tauri signs whenever these variables exist at all, so an empty one is worse than none:
+      # it signs with an identity of "" and fails. They are exported only when they hold something.
       - name: Import the Apple signing certificate
         if: startsWith(matrix.platform, 'macos') && env.APPLE_CERTIFICATE != ''
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            eval "value=\$$name"
+            if [ -n "$value" ]; then echo "$name=$value" >> "$GITHUB_ENV"; fi
+          done
           echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
           security create-keychain -p actions build.keychain
           security default-keychain -s build.keychain
@@ -132,23 +148,87 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k actions build.keychain
           rm certificate.p12
 
+      # Tauri signs Windows bundles during bundling when it is told which installed certificate to
+      # use. The certificate is imported here and named by thumbprint directly in this runner's
+      # copy of the bundler configuration, which leaves no room for a path to resolve differently.
+      - name: Carry the updater signing key when there is one
+        if: env.TAURI_SIGNING_PRIVATE_KEY_SECRET != ''
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY_SECRET: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD_SECRET: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          echo "TAURI_SIGNING_PRIVATE_KEY=$TAURI_SIGNING_PRIVATE_KEY_SECRET" >> "$GITHUB_ENV"
+          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$TAURI_SIGNING_PRIVATE_KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
+
+      - name: Import the Windows signing certificate
+        id: windows_signing
+        if: matrix.platform == 'windows-latest' && env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "signing.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $pfx -Force
+          $timestamp = $env:WINDOWS_TIMESTAMP_URL
+          if ([string]::IsNullOrWhiteSpace($timestamp)) { $timestamp = "http://timestamp.digicert.com" }
+          $path = "src-tauri/tauri.conf.json"
+          $config = Get-Content $path -Raw | ConvertFrom-Json
+          if (-not $config.bundle.PSObject.Properties.Name.Contains("windows")) {
+            $config.bundle | Add-Member -MemberType NoteProperty -Name windows -Value ([pscustomobject]@{})
+          }
+          foreach ($pair in @{ certificateThumbprint = $imported.Thumbprint; digestAlgorithm = "sha256"; timestampUrl = $timestamp }.GetEnumerator()) {
+            if ($config.bundle.windows.PSObject.Properties.Name.Contains($pair.Key)) {
+              $config.bundle.windows.($pair.Key) = $pair.Value
+            } else {
+              $config.bundle.windows | Add-Member -MemberType NoteProperty -Name $pair.Key -Value $pair.Value
+            }
+          }
+          $config | ConvertTo-Json -Depth 32 | Set-Content -Path $path -Encoding utf8
+          Write-Host "signing with certificate $($imported.Thumbprint)"
+
       - name: Build and publish
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Present only when the repository owner has added them; signing is skipped otherwise.
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # The signing variables are exported by the steps above, and only when they hold a value.
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: Guide Watcher ${{ github.event.inputs.tag || github.ref_name }}
           releaseDraft: true
           prerelease: false
           args: --target ${{ matrix.target }}
+
+      # A signature that is missing or broken must be loud, not discovered by whoever downloads it.
+      - name: Check that the Windows installers really are signed
+        if: matrix.platform == 'windows-latest' && env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        run: |
+          $bundle = "src-tauri/target/${{ matrix.target }}/release/bundle"
+          $files = Get-ChildItem -Path $bundle -Recurse -Include *.exe, *.msi
+          if (-not $files) { throw "no Windows installer was produced" }
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            Write-Host "$($file.Name): $($signature.Status)"
+            if ($signature.Status -ne "Valid") { throw "$($file.Name) is not validly signed: $($signature.Status)" }
+          }
+
+      - name: Check that the macOS bundles really are signed
+        if: startsWith(matrix.platform, 'macos') && env.APPLE_CERTIFICATE != ''
+        run: |
+          bundle="src-tauri/target/${{ matrix.target }}/release/bundle"
+          found=0
+          for app in "$bundle"/macos/*.app; do
+            [ -e "$app" ] || continue
+            found=1
+            codesign --verify --deep --strict --verbose=2 "$app"
+            spctl --assess --type execute --verbose "$app" || echo "notarisation is still pending for $app"
+          done
+          [ "$found" = 1 ] || { echo "no macOS app bundle was produced"; exit 1; }
 
       - name: Attest what this build produced
         uses: actions/attest-build-provenance@v1
@@ -176,6 +256,8 @@ jobs:
   checksums:
     needs: build
     runs-on: ubuntu-latest
+    env:
+      VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -188,6 +270,22 @@ jobs:
             -o -name '*.AppImage' -o -name '*.deb' \) -print0 \
             | xargs -0 -I{} sh -c 'sha256sum "{}" | sed "s|installers/.*/||"' > SHA256SUMS.txt
           cat SHA256SUMS.txt
+
+      # Every installer is scanned before anyone downloads it, and the report links go on the
+      # release, so nobody has to take "it is not a virus" on trust.
+      - name: Scan every installer with VirusTotal
+        id: virustotal
+        if: env.VIRUSTOTAL_API_KEY != ''
+        uses: crazy-max/ghaction-virustotal@v4
+        with:
+          vt_api_key: ${{ secrets.VIRUSTOTAL_API_KEY }}
+          update_release_body: true
+          files: |
+            installers/**/*.exe
+            installers/**/*.msi
+            installers/**/*.dmg
+            installers/**/*.AppImage
+            installers/**/*.deb
 
       - name: Attach the checksums to the release
         uses: softprops/action-gh-release@v2

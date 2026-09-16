@@ -13,9 +13,11 @@
     availableQualityPresets, applyQualityPreset, activeQualityPreset,
   } from './confirmation.js';
   import { powerMode, setPowerMode } from '../stores/preferences.js';
+  import Setup from './Setup.svelte';
 
   let { scale=1, setScale, theme='dark', setTheme, resetLayout } = $props();
   let config=$state(null); let configError=$state(''); let settingsNotice=$state('');
+  let showSetup=$state(false);
   let draft=$state(null);
   let authStatuses=$state([]); let authError=$state(''); let authBusy=$state(false); let copiedSession=$state('');
   const codexOptions=$derived(config?.providers?.find(provider=>provider.id==='codex-chatgpt'));
@@ -102,10 +104,12 @@ Both run exactly the same pipeline and produce the same guides.</p></div>
 <p class="muted">Low, medium, high, xhigh, and max are distinct CLI effort settings. Guide Watcher sends the selected value unchanged; source coverage, visual analysis, and native verification stay mandatory.</p>
 {:else if !$powerMode}{:else}<p role="alert">The configured model providers are incomplete.</p>{/if}</section>
 
+<section><h2>This computer</h2><div class="setting"><div><strong>Folders and subjects</strong><p>Where your course material lives, which subjects you keep, and which files start a guide. Every answer is checked against this computer before it is saved.</p></div><button class="button secondary" onclick={()=>{showSetup=true;}}>Open setup</button></div></section>
 <section><h2>Appearance</h2><div class="setting"><div><label for="theme">Theme</label><p>Choose a comfortable reading surface.</p></div><select id="theme" value={theme} onchange={e=>setTheme(e.currentTarget.value)}><option value="dark">Dark</option><option value="light">Light</option><option value="system">Use system setting</option></select></div><div class="setting"><div><label for="scale">Interface size</label><p>Ctrl + / Ctrl − to adjust. Ctrl 0 returns to 100%.</p></div><select id="scale" value={scale} onchange={e=>setScale(Number(e.currentTarget.value))}>{#each [...new Set([.85,1,1.1,1.25,1.5,1.75,2,scale])].sort((a,b)=>a-b) as value}<option value={value}>{Math.round(value*100)}%</option>{/each}</select></div><div class="setting"><div><strong>Workspace layout</strong><p>Restore the default sidebar width and interface size.</p></div><button class="button secondary" onclick={resetLayout}>Reset layout</button></div></section>
 <section><h2>History</h2><div class="setting"><div><strong>Full history</strong><p>Find attempts removed from Recents. Restore a record or permanently delete its history entry. Source files and saved guides are kept.</p><p>{$jobs.filter(j=>j.archivedAt).length} archived · {$jobs.length} total attempts</p></div><button class="button secondary" onclick={()=>{$currentView='full-history';}}>Open full history</button></div></section>
 <section><h2>Understanding your results</h2><details><summary>What does “Succeeded” mean?</summary><p>The generation process finished and the app verified the published output. A provider finishing its response does not by itself mean the guide is complete.</p></details><details><summary>Should I retry or resume?</summary><p>Resume uses a saved, verified context packet to continue writing. Retry starts a new attempt from the source material. History offers an action only when the required files are available and the app supports it.</p></details><details><summary>What happens when I close the app?</summary><p>The window’s Close button stops active jobs and sign-in sessions, then hides the app in the system tray. Minimize keeps work running. Use Quit in the tray menu to exit. Recorded attempts stay in History; unfinished work is never shown as successful.</p></details><details><summary>Where are my older runs?</summary><p>The app imports older valid prep packets, verified guide receipts, and retained unfinished workspaces. Imported entries explain what the files establish; lost logs and unknown failure reasons cannot be reconstructed. New desktop attempts have a saved timeline.</p></details><details><summary>Keyboard shortcuts</summary><p>Ctrl N: choose source files. Ctrl H: history. Ctrl + / Ctrl −: interface size. Ctrl 0: reset size. Tab and Shift Tab: move between controls. Escape: close the navigation drawer. Use arrow keys on the sidebar divider to resize it.</p></details></section>
 </div></section>
+{#if showSetup}<Setup edit onready={()=>{showSetup=false;}} oncancel={()=>{showSetup=false;}}/>{/if}
 
 <style>
 .preset-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;}

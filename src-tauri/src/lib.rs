@@ -415,9 +415,37 @@ async fn resume_guide(
     start_provider_resume_job(app, prep_path, options).await
 }
 
+/// Open a folder picker, for the questions the setup wizard asks about this machine.
+#[tauri::command]
+async fn pick_folder(app: tauri::AppHandle, title: String) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
+        .file()
+        .set_title(if title.trim().is_empty() {
+            "Choose a folder".to_string()
+        } else {
+            title
+        })
+        .pick_folder(move |folder| {
+            let _ = tx.send(folder);
+        });
+
+    let chosen = rx.recv().ok()??;
+    let path = chosen.into_path().ok()?;
+    Some(path.to_string_lossy().replace('\\', "/"))
+}
+
 #[tauri::command]
 fn setup_state() -> setup::SetupState {
     setup::state()
+}
+
+/// The assisted door: write the brief and open a terminal with the assistant in it.
+#[tauri::command]
+fn start_setup_assistant() -> Result<setup::AssistantHandoff, String> {
+    setup::start_assistant()
 }
 
 #[tauri::command]
@@ -808,6 +836,8 @@ pub fn run() {
             setup_state,
             setup_suggestions,
             save_setup,
+            pick_folder,
+            start_setup_assistant,
             list_job_history,
             archive_history_job,
             clear_recent_history,

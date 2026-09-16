@@ -1,6 +1,7 @@
 <script>
   import { onMount, tick } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
+  import { invoke } from '@tauri-apps/api/core';
   import { parseLineEvents } from './lib/parser.js';
   import { updateJobStatus,updateJobActivity,appendStep,receiveWatcherFiles,selectedJobId,showConfirmPanel,pendingFiles } from './stores/jobs.js';
   import { currentView,actionError,actionNotice } from './stores/navigation.js';
@@ -14,8 +15,14 @@
   import Home from './lib/Home.svelte';
   import History from './lib/History.svelte';
   import Settings from './lib/Settings.svelte';
+  import Setup from './lib/Setup.svelte';
   let width=$state(1120); let height=$state(780); let scale=$state(1); let sidebarWidth=$state(248); let drawer=$state(false); let theme=$state('dark'); let resizing=$state(false);
   let mainEl=$state(null); let menuButton=$state(null); let drawerEl=$state(null); let resizeCleanup;
+  // A build that has never been told about this computer asks before it pretends to watch a
+  // folder that does not exist. Until that answer arrives the wizard is not shown either way,
+  // so a configured installation never flashes a setup screen on the way to the workspace.
+  let setupNeeded=$state(null);
+  async function checkSetup(){try{const state=await invoke('setup_state');setupNeeded=!state.ready;}catch(e){setupNeeded=false;$actionError='Could not check this computer’s setup: '+String(e);}}
   const compact=$derived(width/scale<820);
   $effect(()=>{if(!compact)drawer=false;});
   const sidebarSize=$derived(clampSidebar(sidebarWidth,width,scale));
@@ -51,6 +58,7 @@
   $effect(()=>{const view=$currentView;const confirm=$showConfirmPanel; if(mainEl){queueMicrotask(()=>mainEl?.focus({preventScroll:true}));}});
   $effect(()=>{const selected=theme;const media=window.matchMedia('(prefers-color-scheme: light)');function apply(){document.documentElement.dataset.theme=selected==='system'?(media.matches?'light':'dark'):selected;}apply();media.addEventListener('change',apply);return()=>media.removeEventListener('change',apply);});
   onMount(()=>{
+    checkSetup();
     try{scale=normalizeScale(localStorage.getItem('guide-watcher-scale-v2'));sidebarWidth=clampSidebar(Number(localStorage.getItem('guide-watcher-sidebar-width'))||248,window.innerWidth,scale);theme=localStorage.getItem('guide-watcher-theme')||'dark';}catch{}
     let disposed=false;const unlisteners=[];
     async function register(name,handler){try{const off=await listen(name,handler);if(disposed)off();else unlisteners.push(off);}catch(e){$actionError='Could not connect to live app updates: '+String(e);}}
@@ -72,6 +80,7 @@
   });
 </script>
 <svelte:window bind:innerWidth={width} bind:innerHeight={height} onkeydown={keydown}/>
+{#if setupNeeded}<Setup onready={()=>{setupNeeded=false;}}/>{:else}
 <div class="app-shell" class:resizing style:zoom={scale} style:width={width/scale+'px'} style:height={height/scale+'px'}>
   <a class="skip-link" href="#main-content">Skip to main content</a>
   {#if !compact}<div class="sidebar-container" style:width={sidebarSize+'px'}><Sidebar onnavigate={closeDrawer}/></div><button class="resize-handle" aria-label="Resize sidebar" title="Drag to resize, or use Left and Right arrow keys" onpointerdown={startResize} onkeydown={resizeKey}></button>{/if}
@@ -85,6 +94,7 @@
   </div>
   {#if compact && drawer}<div class="drawer-layer"><button class="scrim" aria-label="Close navigation" onclick={closeDrawer}></button><div class="drawer" bind:this={drawerEl} role="dialog" aria-modal="true" aria-label="Navigation" tabindex="-1"><div class="drawer-close"><button class="button ghost" onclick={()=>{drawer=false;menuButton?.focus();}}>Close navigation ×</button></div><Sidebar onnavigate={closeDrawer}/></div></div>{/if}
 </div>
+{/if}
 <style>
 .app-shell{display:flex;overflow:hidden;background:var(--bg-base);position:relative;}.sidebar-container{flex-shrink:0;min-height:0;container-type:size;}.workspace{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;}.toolbar{min-height:3.75rem;flex-shrink:0;display:flex;justify-content:space-between;align-items:center;gap:.5rem;padding:.5rem 1.5rem;border-bottom:1px solid var(--border-panel);}.toolbar-left{display:flex;gap:.5rem;align-items:center;min-width:0;}.location{font-size:.9rem;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.zoom-controls{display:flex;align-items:center;gap:.15rem;flex-shrink:0;}.zoom-controls button{min-width:2rem;min-height:2rem;border-radius:5px;font-size:1.1rem;}.zoom-controls button:hover{background:var(--bg-surface-hover);}.zoom-controls .zoom-reset{font-size:.8rem;min-width:3rem;color:var(--text-secondary);font-variant-numeric:tabular-nums;}main{container-type:size;flex:1;min-height:0;min-width:0;overflow:hidden;display:flex;flex-direction:column;}main:focus{outline:none;}.resize-handle{width:5px;border-left:1px solid var(--border-panel);flex-shrink:0;cursor:col-resize;touch-action:none;}.resize-handle:hover,.resizing .resize-handle{background:var(--border-active);}.resizing{cursor:col-resize;user-select:none;}.app-message{display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin:.7rem 1rem 0;max-height:30%;overflow:auto;flex-shrink:0;}.app-message>div{min-width:0;}.notice{padding:.6rem .9rem;background:var(--bg-active);border-radius:6px;}.app-message .button{min-height:1.8rem;}.drawer-layer{position:absolute;inset:0;z-index:50;display:flex;}.scrim{position:absolute;inset:0;background:#0008;}.drawer{container-type:size;position:relative;width:min(290px,90%);height:100%;display:flex;flex-direction:column;background:var(--bg-sidebar);box-shadow:8px 0 40px #0003;}.drawer :global(.sidebar){flex:1;min-height:0;}.drawer-close{display:flex;justify-content:flex-end;padding:.5rem;}.skip-link{position:absolute;top:-100px;left:1rem;z-index:100;padding:.7rem;background:var(--text-primary);color:var(--bg-base);}.skip-link:focus{top:.5rem;}@media(max-width:500px){.toolbar{padding:.4rem .65rem;}.toolbar-left .button{padding:.4rem;}.location{font-size:.85rem;}}
 </style>
