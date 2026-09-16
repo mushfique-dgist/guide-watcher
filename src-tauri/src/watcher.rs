@@ -24,6 +24,10 @@ pub fn start(app: AppHandle) {
         let rt = rt_handle;
         let tx_inner = tx_clone;
 
+        if let Err(error) = crate::publication::recover_tree(Path::new(config::WATCH_DIR)) {
+            eprintln!("Guide Watcher startup recovery warning: {error}");
+        }
+
         let mut watcher = RecommendedWatcher::new(
             move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
@@ -50,8 +54,7 @@ pub fn start(app: AppHandle) {
     // Spawn the batching + emission task
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        let cooldown: Arc<Mutex<HashMap<String, Instant>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let cooldown: Arc<Mutex<HashMap<String, Instant>>> = Arc::new(Mutex::new(HashMap::new()));
         let mut batch: Vec<String> = Vec::new();
         let mut batch_timer: Option<Instant> = None;
 
@@ -71,9 +74,10 @@ pub fn start(app: AppHandle) {
                         cd.insert(normalized.clone(), Instant::now());
                     }
 
-                    if !batch.iter().any(|b| {
-                        b.replace('\\', "/").to_lowercase() == normalized
-                    }) {
+                    if !batch
+                        .iter()
+                        .any(|b| b.replace('\\', "/").to_lowercase() == normalized)
+                    {
                         batch.push(filepath);
                     }
 
@@ -82,13 +86,12 @@ pub fn start(app: AppHandle) {
                     }
                 }
                 Ok(None) => break, // channel closed
-                Err(_) => {} // timeout, check batch
+                Err(_) => {}       // timeout, check batch
             }
 
             // Emit batch if window elapsed
             if let Some(timer) = batch_timer {
-                if timer.elapsed().as_secs() >= config::BATCH_WINDOW_SECS && !batch.is_empty()
-                {
+                if timer.elapsed().as_secs() >= config::BATCH_WINDOW_SECS && !batch.is_empty() {
                     let files = std::mem::take(&mut batch);
                     batch_timer = None;
 
@@ -97,6 +100,7 @@ pub fn start(app: AppHandle) {
                         let _ = tauri::WebviewWindow::show(&window);
                         let _ = tauri::WebviewWindow::set_focus(&window);
                     }
+                    crate::attention::sources_waiting(&app_handle, files.len());
                     let _ = app_handle.emit("new-files", &files);
                 }
             }
@@ -128,7 +132,9 @@ async fn handle_event(event: Event, tx: &mpsc::Sender<String>) {
 }
 
 async fn scan_directory(dir: &str, tx: &mpsc::Sender<String>) {
-    let walker = walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok());
+    let walker = walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok());
     for entry in walker {
         if entry.file_type().is_file() {
             process_file(&entry.path().to_string_lossy(), tx).await;
@@ -137,6 +143,9 @@ async fn scan_directory(dir: &str, tx: &mpsc::Sender<String>) {
 }
 
 async fn process_file(filepath: &str, tx: &mpsc::Sender<String>) {
+    if is_publication_internal_path(Path::new(filepath)) {
+        return;
+    }
     if !config::is_watched_extension(filepath) {
         return;
     }
@@ -152,12 +161,23 @@ async fn process_file(filepath: &str, tx: &mpsc::Sender<String>) {
     let _ = tx.send(filepath.to_string()).await;
 }
 
+fn is_publication_internal_path(path: &Path) -> bool {
+    path.components().any(|component| {
+        let name = component.as_os_str().to_string_lossy();
+        name.ends_with(".gwwork")
+            || name.ends_with(".gwtxn")
+            || name.ends_with(".gwfailed")
+            || name.ends_with(".gwdelete")
+            || name.ends_with(".gwverify")
+            || name.ends_with("_assets")
+    })
+}
+
 /// Poll file size until stable or timeout.
 async fn wait_for_stable(filepath: &str) -> bool {
     let path = Path::new(filepath);
     let mut prev_size: Option<u64> = None;
-    let max_polls = (config::FILE_STABILITY_TIMEOUT_SECS * 1000)
-        / config::FILE_STABILITY_POLL_MS;
+    let max_polls = (config::FILE_STABILITY_TIMEOUT_SECS * 1000) / config::FILE_STABILITY_POLL_MS;
 
     for _ in 0..max_polls {
         match std::fs::metadata(path) {
@@ -179,4 +199,27 @@ async fn wait_for_stable(filepath: &str) -> bool {
 
     // Timeout — proceed if file still exists
     path.exists()
+}
+
+#[cfg(test)]
+mod publication_path_tests {
+    use super::is_publication_internal_path;
+    use std::path::Path;
+
+    #[test]
+    fn watcher_excludes_all_publication_work_and_final_evidence_trees() {
+        for path in [
+            r"C:\course\.Guide.md.id.gwwork\work\source.pdf",
+            r"C:\course\.Guide.md.id.gwtxn\publish\source.pdf",
+            r"C:\course\.Guide.md.id.gwfailed\work\source.pdf",
+            r"C:\course\.Guide.md.id.gwdelete\publish\source.pdf",
+            r"C:\course\.Guide.md.gwverify\sources\source.pdf",
+            r"C:\course\Guide_assets\source.pdf",
+        ] {
+            assert!(is_publication_internal_path(Path::new(path)), "{path}");
+        }
+        assert!(!is_publication_internal_path(Path::new(
+            r"C:\course\Lecture 1.pdf"
+        )));
+    }
 }

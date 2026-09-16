@@ -1,174 +1,60 @@
-<!-- src/lib/ConfirmPanel.svelte -->
 <script>
-  import { invoke } from '@tauri-apps/api/core';
-  import { pendingFiles, showConfirmPanel, addJob, selectedJobId } from '../stores/jobs.js';
-
-  let config = $state({ models: [], efforts: [], default_model: 'opus', default_effort: 'max' });
-  let model = $state('opus');
-  let effort = $state('max');
-  let checked = $state([]);
-
-  $effect(() => {
-    invoke('get_config').then(c => {
-      config = c;
-      model = c.default_model;
-      effort = c.default_effort;
-    });
-  });
-
-  $effect(() => {
-    // Initialize all checked when pendingFiles changes
-    checked = $pendingFiles.map(() => true);
-  });
-
-  function getFilename(fp) { return fp.replace(/\\/g, '/').split('/').pop(); }
-  function getFolder(fp) {
-    const parts = fp.replace(/\\/g, '/').split('/');
-    return parts.length > 1 ? parts[parts.length - 2] : '';
-  }
-  function getExt(fp) { return fp.split('.').pop().toUpperCase(); }
-
-  async function onGenerate() {
-    const selected = $pendingFiles.filter((_, i) => checked[i]);
-    if (selected.length === 0) { onSkip(); return; }
-
-    const jobIds = await invoke('approve_files', {
-      filePaths: selected, model, effort,
-    });
-
-    // Create job entries in store
-    for (let i = 0; i < selected.length; i++) {
-      addJob({
-        id: jobIds[i],
-        filename: getFilename(selected[i]),
-        filepath: selected[i],
-        folder: getFolder(selected[i]),
-        outputName: getFilename(selected[i]).replace(/\.[^.]+$/, '').replace(/ /g, '_') + '_Guide.md',
-        status: 'starting',
-        activity: 'Launching Claude...',
-        model, effort,
-        startedAt: Date.now(),
-        finishedAt: null,
-        logLines: [],
-      });
-    }
-
-    // Auto-select first new job
-    $selectedJobId = jobIds[0];
-    onSkip(); // close panel
-  }
-
-  function onSkip() {
-    $showConfirmPanel = false;
-    $pendingFiles = [];
-  }
+import { onMount } from 'svelte';
+import { pendingFiles,pendingSource,showConfirmPanel } from '../stores/jobs.js';
+import { currentView } from '../stores/navigation.js';
+import { filename,readableError } from './ui.js';
+import { powerMode } from '../stores/preferences.js';
+import { availableQualityPresets,applyQualityPreset,activeQualityPreset } from './confirmation.js';
+import { confirmationConfig,confirmationError,confirmationBusy,sourceChoices,selectedCourse,prepModel,prepEffort,collectionFallback1Model,collectionFallback1Effort,collectionFallback2Model,collectionFallback2Effort,writerModel,writerEffort,claudeFallbackEnabled,claudeFallbackModel,claudeFallbackEffort,codexFallbackModel,codexFallbackEffort,isChosen,setChosen,loadConfirmationConfig,discardSelection,submitConfirmation } from './confirmation.js';
+let query=$state('');let pageSize=$state(50);
+// Simple mode asks one question instead of ten. "Customise" opens the same controls Power
+// mode shows, for this run only, so nothing is out of reach.
+let showModels=$state(false);let presetChoice=$state('balanced');
+const presets=$derived(availableQualityPresets($confirmationConfig));
+const showModelGrid=$derived($powerMode||showModels);
+$effect(()=>{if($confirmationConfig)presetChoice=activeQualityPreset();});
+function choosePreset(id){if(!$confirmationConfig)return;applyQualityPreset($confirmationConfig,id);presetChoice=id;}
+const resume=$derived($pendingSource==='resume');
+const matching=$derived($pendingFiles.filter(path=>path.toLowerCase().includes(query.toLowerCase())));
+const visible=$derived(matching.slice(0,pageSize));
+const count=$derived($pendingFiles.filter(path=>isChosen(path,$sourceChoices)).length);
+const allVisible=$derived(visible.length>0&&visible.every(path=>isChosen(path,$sourceChoices)));
+const codexOptions=$derived($confirmationConfig?.providers?.find(provider=>provider.id==='codex-chatgpt'));
+const claudeOptions=$derived($confirmationConfig?.providers?.find(provider=>provider.id==='claude-code'));
+onMount(()=>{loadConfirmationConfig();});
 </script>
-
-{#if $showConfirmPanel && $pendingFiles.length > 0}
-  <div class="confirm-panel">
-    <h2>{$pendingFiles.length} new file{$pendingFiles.length > 1 ? 's' : ''} detected</h2>
-
-    <div class="file-list">
-      {#each $pendingFiles as fp, i (fp)}
-        <label class="file-row">
-          <input type="checkbox" bind:checked={checked[i]} />
-          <span class="badge" class:pdf={getExt(fp) === 'PDF'} class:html={getExt(fp) === 'HTML'}>
-            {getExt(fp)}
-          </span>
-          <span class="fname">{getFilename(fp)}</span>
-          <span class="ffolder">{getFolder(fp)}</span>
-        </label>
-      {/each}
-    </div>
-
-    <div class="settings">
-      <label>
-        <span>Model</span>
-        <select bind:value={model}>
-          {#each config.models as m}<option value={m}>{m}</option>{/each}
-        </select>
-      </label>
-      <label>
-        <span>Effort</span>
-        <select bind:value={effort}>
-          {#each config.efforts as e}<option value={e}>{e}</option>{/each}
-        </select>
-      </label>
-    </div>
-
-    <div class="buttons">
-      <button class="btn-skip" onclick={onSkip}>Skip</button>
-      <button class="btn-generate" onclick={onGenerate}>Generate</button>
-    </div>
-  </div>
-{/if}
-
+<section class="confirm-page" aria-labelledby="confirm-title"><div class="confirm-content">
+<header><button class="back" onclick={()=>{$showConfirmPanel=false;$currentView='home';}}>← Workspace</button><h1 id="confirm-title">{resume?'Continue from saved context':'Review your sources'}</h1><p class="intro">{resume?'The app will check the prep packet and its original sources before continuing with writing.':'Choose the material to include. The app checks course order and source requirements before starting any model.'}</p></header>
+{#if $confirmationError}<div class="error-box" role="alert"><strong>{readableError($confirmationError)}</strong><details><summary>Technical details</summary><pre>{$confirmationError}</pre></details>{#if !$confirmationConfig}<button class="button secondary" onclick={loadConfirmationConfig}>Reload settings</button>{/if}</div>{/if}
+{#if resume}<section class="prep-card"><h2>Saved context</h2><strong>{filename($pendingFiles[0])}</strong><p class="source-path">{$pendingFiles[0]}</p><p class="muted">Availability is checked when you continue. Selecting a file does not establish that its saved context is valid.</p></section>
+{:else}<section aria-labelledby="source-heading"><div class="source-heading"><h2 id="source-heading">Source material</h2><span>{count} of {$pendingFiles.length} selected</span></div><label class="search-label" for="source-search">Find a source</label><input id="source-search" type="search" placeholder="Search filenames or folders" bind:value={query} oninput={()=>pageSize=50}/><div class="selection-tools"><button class="button ghost" disabled={!visible.length||$confirmationBusy} onclick={()=>setChosen(visible,!allVisible)}>{allVisible?'Deselect visible':'Select visible'}</button><button class="button ghost" disabled={$confirmationBusy} onclick={()=>setChosen($pendingFiles,false)}>Clear selection</button><span>{matching.length} matching</span></div>
+<div class="sources">{#each visible as path(path)}<label class="source-row"><input type="checkbox" checked={isChosen(path,$sourceChoices)} disabled={$confirmationBusy} onchange={e=>setChosen([path],e.currentTarget.checked)}/><span><strong>{filename(path)}</strong><span class="source-path">{path}</span></span></label>{:else}<p class="empty-source">No sources match your search.</p>{/each}</div>{#if matching.length>pageSize}<button class="button secondary" onclick={()=>pageSize+=50}>Show 50 more sources</button>{/if}
+<p class="hint">Weekly courses can combine several source files into one guide. Unselected files stay available for later review.</p></section>{/if}
+<section class="generation-settings"><h2>{$powerMode?'Generation settings':'How thorough to be'}</h2>{#if !$confirmationConfig}<p role="status">Loading generation settings…</p>{:else}
+{#if !$powerMode}<div class="preset-row" role="radiogroup" aria-label="How thorough to be">
+{#each presets as preset}<button type="button" class="preset" class:chosen={presetChoice===preset.id} role="radio" aria-checked={presetChoice===preset.id} disabled={$confirmationBusy} onclick={()=>choosePreset(preset.id)}><strong>{preset.label}</strong><span>{preset.note}</span></button>{/each}
+</div>
+{#if presetChoice==='custom'&&!showModels}<p class="hint">Your saved settings are a custom mix of models and efforts. They are used as they are unless you choose one above.</p>{/if}
+<button class="button ghost customise" onclick={()=>showModels=!showModels}>{showModels?'Hide model controls':'Customise models for this run'}</button>{/if}
+{#if !resume&&showModelGrid}<label for="course-profile">Course profile</label><select id="course-profile" bind:value={$selectedCourse} disabled={$confirmationBusy}><option value="auto">Automatic from folder</option>{#each $confirmationConfig.course_profiles as profile}{#if profile.id!=='auto'}<option value={profile.id}>{profile.label}</option>{/if}{/each}</select><p class="hint">{$selectedCourse==='auto'?'The app identifies the course from each source’s location.':$confirmationConfig.course_profiles.find(profile=>profile.id===$selectedCourse)?.description||'The selected sources must belong to this course.'}</p>{/if}
+{#if codexOptions&&claudeOptions&&showModelGrid}<div class="model-grid">
+<fieldset><legend>Context collection</legend><label for="prep-model">Primary Codex model</label><select id="prep-model" bind:value={$prepModel} disabled={$confirmationBusy}>{#each codexOptions.models as model}<option value={model}>{model}</option>{/each}</select><label for="prep-effort">Primary effort</label><select id="prep-effort" bind:value={$prepEffort} disabled={$confirmationBusy}>{#each codexOptions.efforts as effort}<option value={effort}>{effort}</option>{/each}</select><p class="field-note">Used first for each visual batch and evidence packet.</p></fieldset>
+<fieldset><legend>Collection recovery</legend><label for="collection-fallback-1-model">First fallback</label><select id="collection-fallback-1-model" bind:value={$collectionFallback1Model} disabled={$confirmationBusy}>{#each codexOptions.models as model}<option value={model}>{model}</option>{/each}</select><label for="collection-fallback-1-effort">First fallback effort</label><select id="collection-fallback-1-effort" bind:value={$collectionFallback1Effort} disabled={$confirmationBusy}>{#each codexOptions.efforts as effort}<option value={effort}>{effort}</option>{/each}</select><label for="collection-fallback-2-model">Second fallback</label><select id="collection-fallback-2-model" bind:value={$collectionFallback2Model} disabled={$confirmationBusy}>{#each codexOptions.models as model}<option value={model}>{model}</option>{/each}</select><label for="collection-fallback-2-effort">Second fallback effort</label><select id="collection-fallback-2-effort" bind:value={$collectionFallback2Effort} disabled={$confirmationBusy}>{#each codexOptions.efforts as effort}<option value={effort}>{effort}</option>{/each}</select><p class="field-note">A rejected or unavailable result moves to the next distinct model.</p></fieldset>
+<fieldset><legend>Guide writing</legend><label for="writer-model">Claude model</label><select id="writer-model" bind:value={$writerModel} disabled={$confirmationBusy}>{#each claudeOptions.models as model}<option value={model}>{model}</option>{/each}</select><label for="writer-effort">Effort</label><select id="writer-effort" bind:value={$writerEffort} disabled={$confirmationBusy}>{#each claudeOptions.efforts as effort}<option value={effort}>{effort}</option>{/each}</select></fieldset>
+<fieldset><legend>Claude fallback</legend><label class="toggle-row"><input type="checkbox" bind:checked={$claudeFallbackEnabled} disabled={$confirmationBusy}/>Use a second Claude model if the writer is unavailable</label><label for="claude-fallback-model">Fallback model</label><select id="claude-fallback-model" bind:value={$claudeFallbackModel} disabled={$confirmationBusy||!$claudeFallbackEnabled}>{#each claudeOptions.models as model}<option value={model}>{model}</option>{/each}</select><label for="claude-fallback-effort">Fallback effort</label><select id="claude-fallback-effort" bind:value={$claudeFallbackEffort} disabled={$confirmationBusy||!$claudeFallbackEnabled}>{#each claudeOptions.efforts as effort}<option value={effort}>{effort}</option>{/each}</select></fieldset>
+<fieldset><legend>Final fallback</legend><label for="codex-fallback-model">Codex model</label><select id="codex-fallback-model" bind:value={$codexFallbackModel} disabled={$confirmationBusy}>{#each codexOptions.models as model}<option value={model}>{model}</option>{/each}</select><label for="codex-fallback-effort">Reasoning effort</label><select id="codex-fallback-effort" bind:value={$codexFallbackEffort} disabled={$confirmationBusy}>{#each codexOptions.efforts as effort}<option value={effort}>{effort}</option>{/each}</select></fieldset>
+</div><p class="hint">The recommended collection order is Luna medium, Terra medium, then Sol medium. Each failed or contract-invalid unit moves forward without rerunning accepted units. If all Codex choices are unavailable, Claude takes over collection; if Claude exhausts its allowance during writing, the final Codex model takes over. Exact source coverage, explanatory visuals, and verified publication remain required.</p>{:else if !showModelGrid}{:else}<p role="alert">The configured model providers are incomplete.</p>{/if}{/if}</section>
+</div><footer><div><strong>{resume?'Ready to check saved context':count+' sources selected'}</strong><p class="hint">{$confirmationBusy?'Checking files and preparing the run. You can navigate away; it keeps going.':$powerMode?'Sources and existing guides will not be overwritten.':'Takes an hour or more. You can close the window; you will get a notification when it is done.'}</p></div><div class="footer-actions"><button class="button secondary" disabled={$confirmationBusy} onclick={discardSelection}>Dismiss selection</button><button class="button primary" disabled={$confirmationBusy||!$confirmationConfig||(!resume&&!count)} aria-busy={$confirmationBusy} onclick={submitConfirmation}>{$confirmationBusy?'Preparing…':resume?'Continue writing':'Generate from '+count+' sources'}</button></div></footer>
+</section>
 <style>
-  .confirm-panel {
-    position: absolute;
-    top: 0; left: 0; bottom: 0;
-    width: 280px;
-    background: var(--bg-base);
-    border-right: 1px solid var(--border-subtle);
-    border-radius: 12px 0 0 12px;
-    padding: 20px 16px;
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    animation: slideIn 0.3s ease;
-  }
-
-  h2 { font-size: 14px; font-weight: 600; margin-bottom: 16px; }
-
-  .file-list {
-    flex: 1;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .file-row {
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px 8px; border-radius: 6px; cursor: pointer;
-    font-size: 11px;
-  }
-  .file-row:hover { background: var(--bg-surface-hover); }
-  .file-row input[type="checkbox"] { accent-color: var(--accent-blue); }
-
-  .badge {
-    font-size: 8px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
-    text-transform: uppercase;
-  }
-  .badge.pdf { background: rgba(59,130,246,0.15); color: rgba(147,197,253,0.9); }
-  .badge.html { background: rgba(52,211,153,0.15); color: rgba(110,231,183,0.9); }
-
-  .fname { color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ffolder { color: var(--text-tertiary); font-size: 9px; }
-
-  .settings {
-    display: flex; gap: 12px; margin: 16px 0;
-  }
-  .settings label { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-  .settings label span { color: var(--text-secondary); font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
-  .settings select {
-    background: var(--bg-surface); color: var(--text-primary);
-    border: 1px solid var(--border-subtle); border-radius: 6px;
-    padding: 6px 8px; font-size: 11px;
-  }
-
-  .buttons { display: flex; gap: 8px; }
-  .btn-skip {
-    flex: 1; padding: 8px; border-radius: 8px;
-    background: var(--bg-surface); color: var(--text-secondary);
-    border: 1px solid var(--border-subtle);
-    cursor: pointer; font-size: 11px; font-weight: 500;
-  }
-  .btn-generate {
-    flex: 2; padding: 8px; border-radius: 8px;
-    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-    color: white; border: none;
-    cursor: pointer; font-size: 11px; font-weight: 600;
-  }
-  .btn-generate:hover { opacity: 0.9; }
+.confirm-page{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;}.confirm-content{width:100%;max-width:964px;margin:0 auto;display:grid;gap:1.75rem;padding:2rem;overflow:auto;flex:1;min-height:0;}.back{color:var(--text-secondary);font-size:.9rem;padding:0 0 1rem;}.intro{max-width:65ch;color:var(--text-secondary);margin-top:.7rem;line-height:1.6;}.source-heading{display:flex;gap:1rem;justify-content:space-between;flex-wrap:wrap;margin-bottom:1rem;}.source-heading>span,.hint{color:var(--text-secondary);font-size:.9rem;}.hint{margin-top:.65rem;line-height:1.6;}.search-label{display:block;font-size:.9rem;margin-bottom:.4rem;}input[type=search]{width:100%;}.selection-tools{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin:.5rem 0;}.selection-tools>span{margin-left:auto;font-size:.85rem;color:var(--text-secondary);}.sources{border:1px solid var(--border-panel);border-radius:8px;overflow:hidden;margin-bottom:.7rem;}.source-row{display:flex;align-items:flex-start;gap:.8rem;padding:1rem;cursor:pointer;border-bottom:1px solid var(--border-panel);}.source-row:last-child{border-bottom:0;}.source-row:hover{background:var(--bg-surface);}.source-row>span{min-width:0;display:grid;gap:.3rem;}.source-row strong{font-size:.95rem;font-weight:500;overflow-wrap:anywhere;}.source-row input{margin-top:.2rem;flex-shrink:0;}.source-path{display:block;overflow-wrap:anywhere;word-break:break-word;font-size:.85rem;color:var(--text-secondary);}.empty-source{padding:1.5rem;color:var(--text-secondary);}.generation-settings{border-top:1px solid var(--border-panel);padding-top:1.5rem;display:grid;gap:.75rem;}
+.preset-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.65rem;}
+.preset{display:grid;gap:.3rem;text-align:left;padding:.85rem;border:1px solid var(--border-panel);border-radius:8px;background:var(--bg-panel);}
+.preset:hover:not(:disabled){border-color:var(--border-subtle);}
+.preset.chosen{border-color:var(--brand);background:var(--bg-active);}
+.preset strong{font-weight:600;}
+.preset span{font-size:.85rem;color:var(--text-secondary);line-height:1.45;}
+.customise{justify-self:start;padding-left:0;}
+@container(max-width:600px){.preset-row{grid-template-columns:1fr;}}.generation-settings select{width:100%;}.model-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;}.model-grid fieldset{display:grid;gap:.55rem;margin:0;padding:1rem;border:1px solid var(--border-panel);border-radius:8px;min-width:0;}.model-grid legend{padding:0 .35rem;font-weight:600;}.toggle-row{display:flex;align-items:flex-start;gap:.55rem;line-height:1.35;}.toggle-row input{margin-top:.15rem;}.prep-card{border:1px solid var(--border-panel);padding:1.25rem;border-radius:8px;display:grid;gap:.75rem;}footer{flex-shrink:0;border-top:1px solid var(--border-panel);padding:1rem 2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;}.footer-actions{display:flex;gap:.6rem;flex-wrap:wrap;}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85rem;}@container(max-width:600px){.confirm-content{padding:1rem;}footer{padding:1rem;}.model-grid{grid-template-columns:1fr;}.footer-actions{width:100%;}.footer-actions .button{flex:1;}}
+@container(max-height:360px){.confirm-page{display:block;}.confirm-content{overflow:visible;}footer{padding:1rem;}}
 </style>

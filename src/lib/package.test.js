@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+test('installer selects the desktop executable in the multi-binary package',()=>{const manifest=readFileSync(new URL('../../src-tauri/Cargo.toml',import.meta.url),'utf8');assert.match(manifest,/default-run\s*=\s*"guide-watcher"/);const main=readFileSync(new URL('../../src-tauri/src/main.rs',import.meta.url),'utf8');assert.match(main,/windows_subsystem\s*=\s*"windows"/);assert.match(main,/guide_watcher_lib::run/);});

@@ -1,193 +1,65 @@
-<!-- src/lib/LogPanel.svelte -->
 <script>
-  import { selectedJob } from '../stores/jobs.js';
-
-  let logContainer = $state(null);
-  let autoScroll = $state(true);
-  let prevLineCount = $state(0);
-
-  function formatElapsed(startedAt, finishedAt) {
-    const end = finishedAt || Date.now();
-    const secs = Math.floor((end - startedAt) / 1000);
-    const h = Math.floor(secs / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    const s = secs % 60;
-    if (h) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  }
-
-  // Tick every second
-  let now = $state(Date.now());
-  $effect(() => {
-    const interval = setInterval(() => { now = Date.now(); }, 1000);
-    return () => clearInterval(interval);
-  });
-
-  // Auto-scroll when new lines arrive
-  $effect(() => {
-    const job = $selectedJob;
-    if (!job || !logContainer) return;
-    const count = job.logLines.length;
-    if (count > prevLineCount && autoScroll) {
-      logContainer.scrollTop = logContainer.scrollHeight;
-    }
-    prevLineCount = count;
-  });
-
-  function onScroll() {
-    if (!logContainer) return;
-    const { scrollTop, scrollHeight, clientHeight } = logContainer;
-    autoScroll = scrollHeight - scrollTop - clientHeight < 50;
-  }
-
-  function getColorClass(tag) {
-    const map = {
-      read: 'log-read', bash: 'log-bash', write: 'log-write',
-      text: 'log-text', dim: 'log-dim', error: 'log-error', header: 'log-tag-header',
-    };
-    return map[tag] || 'log-dim';
-  }
+import { tick } from 'svelte';
+import { selectedJob,selectedJobId } from '../stores/jobs.js';
+import { currentView,historyReturnView } from '../stores/navigation.js';
+import { runHistoryAction } from '../stores/history.js';
+import { currentResumeOptions,loadConfirmationConfig,writerModel,writerEffort,codexFallbackModel } from './confirmation.js';
+import { statusLabel,isActive,dateTime,duration,readableError,RUN_STEPS,runStep,minutesLeft } from './ui.js';
+import { powerMode } from '../stores/preferences.js';
+let feed=$state(null);let follow=$state(true);const scrollPositions=new Map();
+let showTimeline=$state(false);
+let now=$state(Date.now());let tab=$state('summary');let error=$state('');let action=$state('');let confirmAction=$state('');let previousJob='';
+$effect(()=>{const timer=setInterval(()=>now=Date.now(),1000);return()=>clearInterval(timer);});
+$effect(()=>{if($selectedJob?.id!==previousJob){previousJob=$selectedJob?.id;tab='summary';error='';confirmAction='';follow=true;showTimeline=false;}});
+$effect(()=>{const id=$selectedJob?.id;const mode=tab;const el=feed;if(el && mode==='technical'){tick().then(()=>{if(feed===el && $selectedJob?.id===id)el.scrollTop=scrollPositions.get(id)??el.scrollHeight;});}});
+$effect(()=>{const count=$selectedJob?.steps.length;const text=$selectedJob?.steps.at(-1)?.content;const el=feed;if(el&&follow){tick().then(()=>{if(el===feed&&follow)el.scrollTop=el.scrollHeight;});}});
+function scrollLog(){if(!feed)return;follow=feed.scrollHeight-feed.scrollTop-feed.clientHeight<60;scrollPositions.set($selectedJob.id,feed.scrollTop);}
+const lastError=$derived($selectedJob?.steps.filter(s=>s.isError).at(-1)?.text||'');
+const latestMessage=$derived($selectedJob?.events?.at(-1)?.message||$selectedJob?.activity||'');
+const stepIndex=$derived($selectedJob&&!isActive($selectedJob.status)&&$selectedJob.status==='done'?RUN_STEPS.length:runStep(latestMessage));
+const remaining=$derived(isActive($selectedJob?.status)?minutesLeft($selectedJob?.events||[],now):null);
+const phases=$derived($selectedJob?.steps.filter(s=>s.type==='phase').map(s=>s.text)||[]);
+$effect(()=>{loadConfirmationConfig();});
+async function perform(kind){if(action||!$selectedJob)return;action=kind;error='';confirmAction='';try{const options=kind==='resume'?await currentResumeOptions():null;const result=await runHistoryAction(kind,$selectedJob.id,options);if(result?.jobId){$selectedJobId=result.jobId;$currentView='run';}}catch(e){error=String(e);}finally{action='';}}
+function summary(job){if(job.summary)return job.summary;if(job.status==='done')return 'The app confirmed the guide was generated and its output exists.';if(job.status==='failed')return lastError?readableError(lastError):'This attempt did not finish successfully. Review the activity below for details.';if(job.status==='interrupted')return 'The app stopped before this run finished. Check the recovery options below.';return job.activity||'Preparing your selected course material.';}
 </script>
-
-{#if $selectedJob}
-  {@const job = $selectedJob}
-  {@const visibleLines = job.logLines.length > 500 ? job.logLines.slice(-500) : job.logLines}
-
-  <div class="log-panel">
-    <!-- Header -->
-    <div class="log-header-bar">
-      <div class="log-title-area">
-        <div class="log-filename">{job.filename}</div>
-        <div class="log-meta">{job.folder} · {job.model} · {job.effort} effort</div>
-      </div>
-      <div class="log-timer">
-        <span>{formatElapsed(job.startedAt, job.finishedAt)}</span>
-      </div>
-    </div>
-
-    <!-- Log lines -->
-    <div class="log-body" bind:this={logContainer} onscroll={onScroll}>
-      {#each visibleLines as line (line.lineNum)}
-        <div class="log-line">
-          <span class="line-num">{String(line.lineNum).padStart(3, ' ')}</span>
-          <span class={getColorClass(line.tag)}>{line.text}</span>
-        </div>
-      {/each}
-      {#if job.status === 'working' || job.status === 'starting'}
-        <div class="log-line">
-          <span class="line-num">&nbsp;</span>
-          <span class="cursor">█</span>
-        </div>
-      {/if}
-    </div>
-
-    <!-- Status bar -->
-    <div class="log-statusbar">
-      <div class="status-left">
-        {#if job.status === 'working' && job.activity}
-          <span class="dot-mini active"></span>
-          <span>{job.activity}</span>
-        {:else if job.status === 'done'}
-          <span class="dot-mini done"></span>
-          <span>Complete</span>
-        {:else if job.status === 'failed'}
-          <span class="dot-mini failed"></span>
-          <span>Failed</span>
-        {:else}
-          <span class="dot-mini active"></span>
-          <span>Starting...</span>
-        {/if}
-      </div>
-      <span class="event-count">{job.logLines.length} events</span>
-    </div>
-  </div>
-{:else}
-  <div class="log-panel empty">
-    <span>Click a job to view its output</span>
-  </div>
-{/if}
-
+{#if $selectedJob}{@const job=$selectedJob}
+<section class="run-page" aria-labelledby="run-title"><header class="run-header"><button class="back" onclick={()=>{$currentView=$historyReturnView;}}>← {$historyReturnView==='full-history'?'Full history':'History'}</button><div class="title-row"><h1 id="run-title">{job.filename}</h1><span class="status-badge {job.status}">{statusLabel(job.status)}</span></div><div class="run-subtitle"><span>{job.folder||'Course guide'}</span><span>{dateTime(job.startedAt)}</span>{#if isActive(job.status) || job.finishedAt}<span>{duration(job.startedAt,isActive(job.status)?now:job.finishedAt)}</span>{/if}</div></header>
+{#if $powerMode}<div class="tabs" role="tablist" aria-label="Run information"><button role="tab" aria-selected={tab==='summary'} tabindex={tab==='summary'?0:-1} id="summary-tab" aria-controls="summary-panel" onclick={()=>tab='summary'} onkeydown={e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){tab='technical';document.getElementById('technical-tab')?.focus();}}}>Overview</button><button role="tab" aria-selected={tab==='technical'} tabindex={tab==='technical'?0:-1} id="technical-tab" aria-controls="technical-panel" onclick={()=>tab='technical'} onkeydown={e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){tab='summary';document.getElementById('summary-tab')?.focus();}}}>Technical log <span>{job.steps.length}</span></button></div>{/if}
+{#if tab==='summary'}<div class="run-body" role="tabpanel" id="summary-panel" aria-labelledby="summary-tab" tabindex="0"><div class="overview">
+{#if !$powerMode}<ol class="steps" aria-label="Progress">{#each RUN_STEPS as step,index}<li class:done={index<stepIndex} class:now={index===stepIndex&&isActive(job.status)}><span class="step-bar"><i></i></span><span class="step-name">{step.label}</span></li>{/each}</ol>
+<div class="now-line"><div><strong>{isActive(job.status)?(latestMessage||'Getting started'):statusLabel(job.status)}</strong>
+<p class="muted">{#if isActive(job.status)}{remaining?`About ${remaining} minutes left · running ${duration(job.startedAt,now)}`:`Running ${duration(job.startedAt,now)}`}{:else}{dateTime(job.startedAt)} · {duration(job.startedAt,job.finishedAt)}{/if}</p></div>
+<span class="status-badge {job.status}">{statusLabel(job.status)}</span></div>
+{#if isActive(job.status)}<p class="muted">You can close the window. It keeps working and tells you when the guide is ready.</p>{/if}
+{:else}<h2>{isActive(job.status)?'Working on your guide':statusLabel(job.status)}</h2>{/if}
+<p class="outcome">{summary(job)}</p>
+{#if job.nextStep && !isActive(job.status)}<p class="next-step"><strong>What to do next:</strong> {job.nextStep}</p>{/if}
+{#if job.recoveryNote}<p class="recovery-note">{job.recoveryNote}</p>{/if}
+<div class="actions">{#if job.canOpenOutput}<button class="button primary" disabled={!!action} onclick={()=>perform('open')}>Open guide</button>{/if}{#if job.canResume}<button class="button primary" disabled={!!action} onclick={()=>confirmAction='resume'}>Resume writing</button>{/if}{#if job.canRetry}<button class="button secondary" disabled={!!action} onclick={()=>confirmAction='retry'}>Retry from sources</button>{/if}{#if isActive(job.status) && job.canCancel!==false}<button class="button secondary" disabled={!!action} onclick={()=>confirmAction='cancel'}>{job.cancellationScope==='batch'?'Stop this batch':'Stop this run'}</button>{/if}</div>
+{#if confirmAction}<div class="confirm-action"><strong>{confirmAction==='cancel'?(job.cancellationScope==='batch'?'Stop this batch?':'Stop this run?'):confirmAction==='resume'?'Continue from saved context?':'Start a new attempt?'}</strong><p>{confirmAction==='cancel'?(job.cancellationScope==='batch'?'All active and queued guides submitted together in this batch will stop. Independent batches keep running. Valid saved context can be used later.':'Current work will stop. A valid saved prep packet can be used later.'):confirmAction==='resume'?`The app will recheck the saved prep packet, then continue writing with ${$writerModel||'the default writer'}${$writerEffort?` (${$writerEffort})`:''}${$codexFallbackModel?`, falling back to ${$codexFallbackModel} if that model is unavailable`:''}. If an earlier attempt left a partial draft, it is continued in the same style. Change the model under Settings & help → Generation defaults before continuing.`:'This starts context collection again from recorded sources. Your earlier attempt stays in History.'}</p><div class="actions"><button class="button secondary" onclick={()=>confirmAction=''}>Go back</button><button class="button primary" onclick={()=>perform(confirmAction)}>{confirmAction==='cancel'?'Stop run':confirmAction==='resume'?'Resume writing':'Start retry'}</button></div></div>{/if}
+{#if action}<p role="status">{action==='cancel'?'Stopping…':action==='open'?'Opening guide…':'Preparing the new attempt…'}</p>{/if}
+{#if error}<div class="error-box" role="alert"><strong>{readableError(error)}</strong><details><summary>Technical details</summary><pre>{error}</pre></details></div>{/if}
+{#if !$powerMode}<button class="button ghost details-toggle" onclick={()=>showTimeline=!showTimeline}>{showTimeline?'Hide details':'Show details'}</button>{/if}
+{#if $powerMode||showTimeline}<section class="timeline"><h2>What happened</h2>{#if job.events?.length}<ol>{#each job.events as event,i (i)}<li class:error={event.level==='error'}><time>{dateTime(event.timestamp)}</time><div class="event-body"><p>{event.message}</p>{#if event.nextStep}<p class="event-next"><strong>What to do:</strong> {event.nextStep}</p>{/if}{#if event.detail}<details class="event-detail"><summary>Technical detail</summary><pre>{event.detail}</pre></details>{/if}</div></li>{/each}</ol>{:else if phases.length}<ol>{#each phases as phase,i(i)}<li><p>{phase}</p></li>{/each}</ol>{:else}<p class="muted">{isActive(job.status)?'Waiting for the first progress update.':'No detailed activity was recorded for this attempt.'}</p>{/if}</section>
+<details class="file-details"><summary>Files and generation settings</summary><dl><dt>Source</dt><dd>{job.filepath||'Not recorded'}</dd><dt>Output</dt><dd>{job.outputPath||job.outputName||'Not published'}</dd>{#if job.prepPath}<dt>Saved context</dt><dd>{job.prepPath}</dd>{/if}{#if job.prepModel}<dt>Context model</dt><dd>{job.prepModel} · {job.prepEffort}</dd>{/if}{#if job.collectionFallbackChain?.length}<dt>Collection recovery</dt><dd>{job.collectionFallbackChain.map(item=>`${item.model} · ${item.effort}`).join(' → ')}</dd>{/if}{#if job.model}<dt>Writer model</dt><dd>{job.model} · {job.effort}</dd>{/if}{#if job.fallbackChain?.length}<dt>Writing recovery</dt><dd>{job.fallbackChain.map(item=>`${item.model} · ${item.effort}`).join(' → ')}</dd>{/if}</dl></details>
+{#if lastError}<details class="failure-details"><summary>Last diagnostic message</summary><pre>{lastError}</pre></details>{/if}{/if}
+</div></div>{:else}<div class="technical-note"><span>Raw model output for debugging. The plain-language timeline and next steps are in Overview.</span><button class="button ghost" onclick={()=>{follow=true;if(feed)feed.scrollTop=feed.scrollHeight;}}>Jump to latest</button></div><div class="technical-feed" bind:this={feed} onscroll={scrollLog} role="tabpanel" id="technical-panel" aria-labelledby="technical-tab" tabindex="0">
+{#each job.steps as step(step.id)}<div class="log-entry" class:error={step.isError}>{#if step.type==='complete'}<strong>Provider response finished</strong><span>Guide validation and publication are tracked separately in Overview.</span>{:else if step.type==='tool_start'}<strong>{step.tool} <small>{step.status==='done'?'finished':'started'}</small></strong><pre>{step.detail||''}</pre>{:else if step.type==='text_block'}<details><summary>Provider output ({step.content.length.toLocaleString()} characters)</summary><pre>{step.content}</pre></details>{:else}<pre>{step.text||step.content||''}</pre>{/if}</div>{:else}<p class="muted">{isActive(job.status)?'Waiting for provider output…':'Technical output is available during the current session. The saved timeline is in Overview.'}</p>{/each}
+</div>{/if}</section>
+{:else}<section class="page"><div class="page-inner"><h1>Choose a guide</h1><p class="muted">Select a recent run or open History to see its outcome.</p><button class="button secondary" onclick={()=>{$currentView='history';}}>Open history</button></div></section>{/if}
 <style>
-  .log-panel {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    background: var(--bg-panel);
-    border-radius: 12px;
-    border: 1px solid var(--border-panel);
-    overflow: hidden;
-  }
-  .log-panel.empty {
-    justify-content: center;
-    align-items: center;
-    color: var(--text-tertiary);
-    font-size: 12px;
-  }
-
-  .log-header-bar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 14px 16px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-  }
-  .log-filename { font-size: 12px; font-weight: 600; }
-  .log-meta { color: var(--text-tertiary); font-size: 9px; margin-top: 3px; }
-  .log-timer {
-    background: rgba(59,130,246,0.08);
-    padding: 4px 12px;
-    border-radius: 8px;
-    border: 1px solid rgba(59,130,246,0.12);
-    color: rgba(147,197,253,0.9);
-    font-size: 11px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .log-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px 16px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 2;
-  }
-
-  .log-line { display: flex; white-space: nowrap; }
-  .line-num {
-    color: var(--log-line-num);
-    width: 32px;
-    text-align: right;
-    margin-right: 12px;
-    user-select: none;
-    font-size: 10px;
-    flex-shrink: 0;
-  }
-
-  .log-read { color: var(--log-read); }
-  .log-bash { color: var(--log-bash); }
-  .log-write { color: var(--log-write); }
-  .log-text { color: var(--log-text); }
-  .log-dim { color: var(--log-dim); }
-  .log-error { color: var(--accent-red); }
-  .log-tag-header { color: var(--accent-purple); font-weight: bold; }
-
-  .cursor { color: rgba(255,255,255,0.1); animation: pulse 1s infinite; }
-
-  .log-statusbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 16px;
-    border-top: 1px solid rgba(255,255,255,0.04);
-    font-size: 9px;
-    color: var(--text-tertiary);
-  }
-  .status-left { display: flex; align-items: center; gap: 6px; }
-  .event-count { color: var(--text-dim); }
-
-  .dot-mini { width: 5px; height: 5px; border-radius: 50%; }
-  .dot-mini.active { background: var(--accent-blue); box-shadow: 0 0 6px rgba(59,130,246,0.4); }
-  .dot-mini.done { background: var(--accent-green); }
-  .dot-mini.failed { background: var(--accent-red); }
+.steps{list-style:none;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.6rem;padding:0;margin:0;}
+.steps li{display:grid;gap:.4rem;}
+.step-bar{height:4px;border-radius:2px;background:var(--border-panel);overflow:hidden;}
+.step-bar i{display:block;height:100%;width:0;background:var(--fill-work);border-radius:2px;}
+.steps li.done .step-bar i{width:100%;background:var(--fill-done);}
+.steps li.now .step-bar i{width:55%;}
+.step-name{font-size:.85rem;color:var(--text-tertiary);}
+.steps li.done .step-name,.steps li.now .step-name{color:var(--text-primary);}
+.now-line{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:1rem;border:1px solid var(--border-panel);border-radius:var(--radius);background:var(--bg-panel);}
+.now-line strong{font-weight:600;overflow-wrap:anywhere;}
+.now-line p{font-size:.9rem;margin-top:.25rem;}
+.details-toggle{justify-self:start;padding-left:0;}
+.run-page{height:100%;overflow:auto;min-height:0;min-width:0;display:flex;flex-direction:column;}.run-header{padding:1.5rem 2rem 1rem;flex-shrink:0;max-height:35%;overflow:auto;}.back{color:var(--text-secondary);font-size:.85rem;padding:0 0 .75rem;}.title-row{display:flex;align-items:flex-start;flex-wrap:wrap;justify-content:space-between;gap:.75rem;}.title-row h1{font-size:1.4rem;overflow-wrap:anywhere;min-width:0;flex:1;}.run-subtitle{display:flex;flex-wrap:wrap;gap:.4rem 1rem;color:var(--text-secondary);font-size:.85rem;margin-top:.6rem;}.tabs{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border-panel);padding:0 2rem;flex-shrink:0;}.tabs button{padding:.8rem 0;margin-right:1.5rem;color:var(--text-secondary);border-bottom:2px solid transparent;}.tabs button[aria-selected=true]{border-bottom-color:var(--text-primary);color:var(--text-primary);}.tabs span{font-size:.8rem;color:var(--text-tertiary);margin-left:.3rem;}.run-body{flex:1 0 12rem;min-height:12rem;overflow:auto;padding:1.5rem 2rem;}.overview{max-width:850px;display:grid;gap:1rem;}.outcome{color:var(--text-secondary);font-size:1.05rem;line-height:1.65;max-width:65ch;overflow-wrap:anywhere;}.actions{display:flex;gap:.65rem;flex-wrap:wrap;}.recovery-note{color:var(--text-secondary);}.next-step{padding:.75rem 1rem;border-left:3px solid var(--accent-blue,#2a78d6);background:var(--bg-surface);border-radius:6px;line-height:1.55;max-width:65ch;}.event-body{display:grid;gap:.4rem;min-width:0;}.event-next{color:var(--text-primary);font-size:.92rem;}.event-detail summary{cursor:pointer;color:var(--text-tertiary);font-size:.8rem;}.event-detail pre{margin-top:.5rem;color:var(--text-secondary);}.confirm-action{padding:1rem;border:1px solid var(--border-subtle);background:var(--bg-surface);border-radius:8px;display:grid;gap:.7rem;}.timeline{margin-top:1rem;border-top:1px solid var(--border-panel);padding-top:1.5rem;}.timeline>p{margin-top:1rem;}ol{list-style:none;padding:0;margin:1rem 0 0;}li{padding:.8rem 0;border-bottom:1px solid var(--border-panel);display:grid;grid-template-columns:10rem 1fr;gap:.7rem;}time{font-size:.8rem;color:var(--text-tertiary);}li p{overflow-wrap:anywhere;}li.error p{color:var(--accent-red);}.file-details,.failure-details{padding:1rem 0;border-bottom:1px solid var(--border-panel);}dl{display:grid;grid-template-columns:8rem 1fr;gap:.7rem 1rem;margin:1rem 0 0;}dt{color:var(--text-secondary);}dd{margin:0;overflow-wrap:anywhere;font-size:.9rem;}pre{white-space:pre-wrap;overflow-wrap:anywhere;font: .85rem/1.65 var(--font-mono);margin:0;}details>pre{margin-top:.75rem;}.technical-note{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;padding:.6rem 2rem;color:var(--text-secondary);font-size:.85rem;}.technical-feed{flex:1 0 10rem;min-height:10rem;overflow:auto;padding:1rem 2rem;}.log-entry{border-bottom:1px solid var(--border-panel);padding:.8rem 0;display:grid;gap:.35rem;color:var(--text-secondary);}.log-entry strong{color:var(--text-primary);font-size:.9rem;}.log-entry small{font-weight:400;}.log-entry.error{color:var(--accent-red);}.log-entry span{font-size:.85rem;}@container(max-width:700px){.run-header{padding:1rem;}.tabs{padding:0 1rem;}.run-body,.technical-feed{padding:1rem;}.technical-note{padding:.5rem 1rem;}li,dl{grid-template-columns:1fr;gap:.3rem;}}
 </style>

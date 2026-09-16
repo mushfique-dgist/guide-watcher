@@ -1,0 +1,32 @@
+{
+  // Guide Watcher machine settings. Copy this file to guide-watcher.local.json and edit it for
+  // your computer, then build. The local copy is git-ignored, so your folders never reach the
+  // repository. Use forward slashes on every platform.
+
+  // Where your course folders live. The app watches this folder for new lecture files, and each
+  // course is a folder inside it.
+  "watch_dir": "C:/Users/you/Documents/Study/Current Semester",
+  "fifth_semester_root": "C:/Users/you/Documents/Study/Current Semester",
+  // An older term kept for its finished guides; point it at the same place if you have only one.
+  "fourth_semester_root": "C:/Users/you/Documents/Study/Previous Semester",
+
+  // The automation folder that ships in this package: the writing rules and the verifier the app
+  // runs. Point these at wherever you put the _automation folder.
+  "template_file": "C:/Users/you/Documents/Study/_automation/guide_prompt.txt",
+  "depth_contract_file": "C:/Users/you/Documents/Study/_automation/guide_depth_contract.md",
+  "render_slides_script": "C:/Users/you/Documents/Study/_automation/render_slides.py",
+  "guide_lint_script": "C:/Users/you/Documents/Study/_automation/guide_lint.py",
+  "guide_lint_requirements": "C:/Users/you/Documents/Study/_automation/requirements-verifier.txt",
+  "supplementary_collect_script": "C:/Users/you/Documents/Study/_automation/supplementary_collect.py",
+
+  // Optional extras. Leave the placeholders if you do not use the lecture-capture features; the
+  // app only reads them when you use the feature that needs them.
+  "lms_agent_root": "C:/Users/you/Documents/Study/lms-agent",
+  "lms_node_executable": "C:/Program Files/nodejs/node.exe",
+  "lms_tsx_cli": "node_modules/tsx/dist/cli.mjs",
+  "ffmpeg_executable": "C:/Program Files/ffmpeg/bin/ffmpeg.exe",
+  "ffprobe_executable": "C:/Program Files/ffmpeg/bin/ffprobe.exe",
+  "transcription_uv_executable": "C:/Users/you/AppData/Local/uv/uv.exe",
+  "transcription_script": "C:/Users/you/Documents/Study/guide-watcher/scripts/transcribe_audio.py",
+  "circuit_lab_course_id": "_00000_1"
+}

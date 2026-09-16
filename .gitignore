@@ -1,4 +1,23 @@
-node_modules
-target
-dist
-.superpowers
+# Build output
+/dist/
+/src-tauri/target/
+/node_modules/
+
+# This computer's folders, tool paths and course ids. Copy guide-watcher.example.json to this
+# name and edit it; it must never be committed.
+/guide-watcher.local.json
+
+# Working notes and caches from the tools used to build this, not part of the product
+/modification-chat.md
+/other-agent-work.md
+/graphify-out/
+/.claude-codex/
+/.superpowers/
+/docs/superpowers/
+/%SystemDrive%/
+.impeccable.md
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+*.swp

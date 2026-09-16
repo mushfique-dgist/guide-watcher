@@ -1,8 +1,10 @@
 [package]
 name = "guide-watcher"
+default-run = "guide-watcher"
 version = "2.0.0"
-description = "Guide Watcher — auto-generate study guides from lecture PDFs"
-authors = ["you"]
+description = "Generate study guides from lecture PDFs"
+authors = ["Guide Watcher contributors"]
+license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -28,4 +30,20 @@ notify = "7"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 walkdir = "2"
+pdf-extract = "0.10"
+regex = "1"
+same-file = "1"
+semver = "1"
+png = "0.17"
+pulldown-cmark = { version = "=0.13.4", default-features = false }
+fontdue = "0.9.4"
+notosans = "0.1.0"
+sha2 = "0.10"
+fs2 = "0.4"
+futures = "0.3"
+zip = { version = "4", default-features = false, features = ["deflate"] }
 
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+tauri-plugin-window-state = "2.4.1"
+tauri-plugin-clipboard-manager = "2.3.3"
+tauri-plugin-single-instance = "2.4.4"
