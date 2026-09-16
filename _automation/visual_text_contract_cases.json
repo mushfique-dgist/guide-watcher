@@ -1,0 +1,16 @@
+{
+  "accepted": [
+    {"value": "Annotated source showing the meter in voltage mode.", "max_bytes": 240},
+    {"value": "The highlighted terminal is the reference node for this measurement.", "max_bytes": 320},
+    {"value": "Compare the marked selector position with the expected display before energizing the circuit.", "max_bytes": 640},
+    {"value": "Use 2.5 V at node A, then verify polarity.", "max_bytes": 240}
+  ],
+  "rejected": [
+    {"value": "Inline `code` is not canonical visual text.", "max_bytes": 240},
+    {"value": "Alt closes ] and injects a link.", "max_bytes": 240},
+    {"value": "Caption line one\nCaption line two", "max_bytes": 320},
+    {"value": "Entity &copy; is ambiguous.", "max_bytes": 640},
+    {"value": " leading whitespace", "max_bytes": 240},
+    {"value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "max_bytes": 240}
+  ]
+}

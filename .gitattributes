@@ -1,0 +1,19 @@
+# Check every text file out with LF on every platform. The verifier reads its pinned requirements
+# byte for byte and rejects a CRLF line, so a Windows checkout used to fail its own tests.
+* text=auto eol=lf
+
+# Binary files must never be translated.
+*.png binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.dmg binary
+*.exe binary
+*.msi binary
+
+# Windows scripts need their own endings to run.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf

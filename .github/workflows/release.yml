@@ -84,7 +84,7 @@ jobs:
       - name: Point this runner at a study folder of its own
         shell: bash
         run: |
-          mkdir -p "$RUNNER_TEMP/study/Photography"
+          mkdir -p "$RUNNER_TEMP/study/Photography" "$RUNNER_TEMP/study/Circuit Lab" "$RUNNER_TEMP/study/Scientific Writing"
           mkdir -p "$RUNNER_TEMP/config"
           python - "$RUNNER_TEMP" "$GITHUB_WORKSPACE" <<'PY'
           import json, os, sys
@@ -93,7 +93,13 @@ jobs:
               "watch_dir": os.path.join(temp, "study").replace("\\", "/"),
               "automation_dir": os.path.join(workspace, "_automation").replace("\\", "/"),
               "archive_dir": "",
-              "courses": [{"id": "photography", "label": "Photography", "folder": "Photography"}],
+              "courses": [
+                  {"id": "photography", "label": "Photography", "folder": "Photography"},
+                  {"id": "circuit-lab", "label": "Circuit Lab", "folder": "Circuit Lab",
+                   "mode": "weekly-lab", "kind": "circuit-lab"},
+                  {"id": "scientific-writing", "label": "Scientific Writing", "folder": "Scientific Writing",
+                   "mode": "weekly-material", "kind": "scientific-writing-week"},
+              ],
               "tools": {},
           }
           with open(os.path.join(temp, "config", "settings.json"), "w", encoding="utf-8") as handle:

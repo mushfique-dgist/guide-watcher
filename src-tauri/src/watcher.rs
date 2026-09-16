@@ -208,16 +208,34 @@ mod publication_path_tests {
 
     #[test]
     fn watcher_excludes_all_publication_work_and_final_evidence_trees() {
+        // Built from components so the assertion means the same thing on every platform.
+        for internal in [
+            [".Guide.md.id.gwwork", "work", "source.pdf"],
+            [".Guide.md.id.gwtxn", "publish", "source.pdf"],
+            [".Guide.md.id.gwfailed", "work", "source.pdf"],
+            [".Guide.md.id.gwdelete", "publish", "source.pdf"],
+            [".Guide.md.gwverify", "sources", "source.pdf"],
+            ["Guide_assets", "source.pdf", ""],
+        ] {
+            let mut path = std::path::PathBuf::from("course");
+            for part in internal.iter().filter(|part| !part.is_empty()) {
+                path.push(part);
+            }
+            assert!(is_publication_internal_path(&path), "{}", path.display());
+        }
+
+        // On Windows a backslash is also a separator, and the product must recognise it.
+        #[cfg(windows)]
         for path in [
             r"C:\course\.Guide.md.id.gwwork\work\source.pdf",
-            r"C:\course\.Guide.md.id.gwtxn\publish\source.pdf",
-            r"C:\course\.Guide.md.id.gwfailed\work\source.pdf",
-            r"C:\course\.Guide.md.id.gwdelete\publish\source.pdf",
-            r"C:\course\.Guide.md.gwverify\sources\source.pdf",
             r"C:\course\Guide_assets\source.pdf",
         ] {
             assert!(is_publication_internal_path(Path::new(path)), "{path}");
         }
+        assert!(!is_publication_internal_path(
+            &std::path::Path::new("course").join("Lecture 1.pdf")
+        ));
+        #[cfg(windows)]
         assert!(!is_publication_internal_path(Path::new(
             r"C:\course\Lecture 1.pdf"
         )));
