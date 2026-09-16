@@ -33,15 +33,19 @@ modelled on a past paper you supply. It took 76 minutes and told you when it was
 
 ## Screenshots
 
-| Four steps and a clock, while it works | One question instead of ten |
-|---|---|
-| ![Progress](docs/media/progress.png) | ![Settings](docs/media/presets.png) |
+**Four steps and a clock, while it works.** A guide takes one to three hours, so the run view
+says which stage it is in, how long is left, and that you can close the window.
 
-The interface is deliberately plain. Everything it hides, every model, effort level and fallback,
-and the full technical log, comes back with one **Power mode** switch. Light and dark are both
-first-class.
+![Progress view showing four steps and the time remaining](docs/media/progress.png)
 
-![Light theme](docs/media/light.png)
+**One question instead of ten.** The screen before a run asks how thorough to be. Every model,
+effort level and fallback still exists; they come back with one **Power mode** switch.
+
+![Settings showing the Quick, Balanced and Thorough choice](docs/media/presets.png)
+
+**Light and dark are both first-class.**
+
+![The workspace in the light theme](docs/media/light.png)
 
 ## Install
 
