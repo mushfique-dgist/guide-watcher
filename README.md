@@ -69,6 +69,11 @@ gh attestation verify Guide.Watcher_2.1.0_x64-setup.exe --repo mushfique-dgist/g
 sha256sum -c SHA256SUMS.txt        # certutil -hashfile <file> SHA256 on Windows
 ```
 
+Every release is also scanned by all 70 engines on VirusTotal before it is published, and the
+results are linked from the release notes: the macOS disk image is clean, and the Windows
+installer is flagged only by SecureAge, a machine-learning engine that flags installers it has
+not seen signed. Microsoft Defender, Kaspersky, ESET, BitDefender and CrowdStrike report it clean.
+
 <details>
 <summary>If your browser or operating system warns about the download</summary>
 
