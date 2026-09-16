@@ -5226,6 +5226,30 @@ mod tests {
         relative: &str,
         frame: &std::path::Path,
     ) -> serde_json::Value {
+        // A captured video is only accepted with the timestamped transcript its frames are read
+        // against, so the fixture writes a real one beside the frames.
+        let context_root = source.parent().unwrap().join(format!(
+            "{}.guide-context",
+            source.file_name().unwrap().to_str().unwrap()
+        ));
+        let transcript = context_root.join("transcripts/video-01.json");
+        std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
+        std::fs::write(
+            &transcript,
+            serde_json::to_vec(&serde_json::json!({
+                "schema_version": 1,
+                "language": "English",
+                "duration_seconds": 20.0,
+                "segments": [{
+                    "id": "segment-1",
+                    "start_seconds": 0.0,
+                    "end_seconds": 20.0,
+                    "text": "Set the meter to DC volts before connecting the probes."
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
         serde_json::json!({
             "schema_version": 1,
             "source": {
@@ -5238,10 +5262,12 @@ mod tests {
             "videos": [{
                 "language": "English", "title": "Week 2 lab briefing",
                 "duration_seconds": 20.0, "source_label": "LMS Week 2 announcement",
-                "transcript": [{
-                    "id": "segment-1", "start_seconds": 0.0, "end_seconds": 20.0,
-                    "text": "Set the meter to DC volts before connecting the probes."
-                }],
+                "transcript": {
+                    "path": "transcripts/video-01.json",
+                    "sha256": file_sha256(&transcript).unwrap(),
+                    "language": "English",
+                    "segment_count": 1
+                },
                 "frames": [{
                     "path": relative, "timestamp_seconds": 5,
                     "sha256": file_sha256(frame).unwrap(),
@@ -6938,6 +6964,39 @@ mod tests {
                 error.contains("symlink, junction, or reparse point"),
                 "{error}"
             );
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    /// The symlink tests below only mean something if their manifests are otherwise valid, and a
+    /// machine that cannot create symlinks skips them entirely. This proves the fixtures still
+    /// match the sidecar schema everywhere, so fixture rot is caught rather than silently skipped.
+    #[test]
+    fn the_symlink_fixtures_are_otherwise_valid_course_context() {
+        for frame_case in [false, true] {
+            let root = scratch_dir();
+            let source = root.join("lecture.pdf");
+            std::fs::write(&source, b"source").unwrap();
+            let context_root = root.join("lecture.pdf.guide-context");
+            std::fs::create_dir_all(context_root.join("announcements")).unwrap();
+            std::fs::create_dir_all(context_root.join("frames")).unwrap();
+            let manifest = if frame_case {
+                let frame = context_root.join("frames/frame.png");
+                std::fs::write(&frame, png_fixture(2, 2)).unwrap();
+                context_manifest_with_frame(&source, "frames/frame.png", &frame)
+            } else {
+                let announcement = context_root.join("announcements/week.md");
+                std::fs::write(&announcement, b"Check probe polarity.").unwrap();
+                context_manifest_with_announcement(&source, "announcements/week.md", &announcement)
+            };
+            std::fs::write(
+                root.join("lecture.pdf.guide-context.json"),
+                serde_json::to_vec(&manifest).unwrap(),
+            )
+            .unwrap();
+
+            load_course_context(&source, &file_sha256(&source).unwrap())
+                .unwrap_or_else(|error| panic!("frame_case {frame_case}: {error}"));
             std::fs::remove_dir_all(root).unwrap();
         }
     }

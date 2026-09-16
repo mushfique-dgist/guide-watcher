@@ -949,7 +949,9 @@ mod tests {
 
     fn test_course(root: &Path) -> ResolvedCourse {
         ResolvedCourse {
-            id: "preflight-course".to_string(),
+            // A course reservation is held across every process on this machine, so two tests
+            // sharing one course ID would block each other whenever they ran at the same time.
+            id: format!("preflight-course-{}", uuid::Uuid::new_v4()),
             label: "Preflight course".to_string(),
             root: root.canonicalize().unwrap(),
             guide_mode: GuideMode::LectureDeck,

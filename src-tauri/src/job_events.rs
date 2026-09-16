@@ -154,17 +154,28 @@ pub fn reserve_course(course_id: &str, course_root: &Path) -> Result<CourseReser
                 lock_path.display()
             )
         })?;
-    match lock_file.try_lock() {
-        Ok(()) => {}
-        Err(TryLockError::WouldBlock) => {
-            return Err(format!(
-                "Another Guide Watcher process is already generating course '{course_id}'. Wait for that batch to finish."
-            ));
-        }
-        Err(TryLockError::Error(error)) => {
-            return Err(format!(
-                "Could not lock course '{course_id}': {error}. No provider was started."
-            ));
+    // A lock held by a process that has just exited is not always released the instant its
+    // handle closes, so a run started right after the previous one would be refused for a
+    // reason that is already gone. Wait a short, bounded moment before saying so; a batch that
+    // really is running is still refused, only a few hundred milliseconds later.
+    let mut attempt = 0;
+    loop {
+        match lock_file.try_lock() {
+            Ok(()) => break,
+            Err(TryLockError::WouldBlock) if attempt < 10 => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(TryLockError::WouldBlock) => {
+                return Err(format!(
+                    "Another Guide Watcher process is already generating course '{course_id}'. Wait for that batch to finish."
+                ));
+            }
+            Err(TryLockError::Error(error)) => {
+                return Err(format!(
+                    "Could not lock course '{course_id}': {error}. No provider was started."
+                ));
+            }
         }
     }
     let owner = Uuid::new_v4().to_string();
